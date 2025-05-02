@@ -40,6 +40,7 @@ if duo_header.text == "Enter code in Duo Mobile":
     element = driver.find_element(By.CLASS_NAME, "verification-code")
     code = element.text
     print(code)
+    time.sleep(20)
 else:
     print(duo_header.text)
 
