@@ -1,2 +1,3 @@
 venv/
 backend/.env
+chromedriver-mac-arm64/
