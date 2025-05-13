@@ -41,8 +41,24 @@ if duo_header.text == "Enter code in Duo Mobile":
     code = element.text
     print(code)
     time.sleep(20)
+    trust_screen = driver.find_element(By.ID, "trust-this-browser-label")
+    print(trust_screen.text)
+    if trust_screen.text == "Is this your device?":
+        driver.find_element(By.ID, "dont-trust-browser-button").click()
+        time.sleep(5)
+        click_banner_menu = driver.find_element(By.ID, "bannerMenu")
+        print(click_banner_menu.text)
+        click_banner_menu.click()
+        time.sleep(5)
+        driver.find_element(By.CLASS_NAME, "menu-item menu-common").click()
+        driver.find_element(By.CLASS_NAME, "menu-common").click()
+        driver.find_element(By.ID, "menuList").click()
+        driver.find_element(By.CLASS_NAME, "menu-text menu-common").click()
+    else:
+        print("Duo is not working")
 else:
     print(duo_header.text)
+
 
 
 
