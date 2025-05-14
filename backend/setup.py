@@ -12,7 +12,7 @@ load_dotenv()
 
 
 def setup_driver():
-
+    # Get the path of the current file
     path = "../chromedriver-mac-arm64/chromedriver"
 
     if not os.path.exists(path):
