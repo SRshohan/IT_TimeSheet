@@ -6,9 +6,8 @@ from selenium.webdriver.chrome.service import Service
 from selenium.webdriver.chrome.options import Options
 from selenium import webdriver
 import os
+from selenium.webdriver.common.keys import Keys
 
-# Collect data from the website
-data = []
 
 def extract_text(text):
     return text.split("\n")
@@ -43,24 +42,44 @@ wait.until(EC.presence_of_element_located((By.CSS_SELECTOR, ".table.table-stripe
 # Find the table
 table = driver.find_element(By.CSS_SELECTOR, ".table.table-striped.table-bordered.table-hover.table-condensed")
 
-# Extract headers
-headers = table.find_elements(By.TAG_NAME, "th")
-header_texts = [header.text for header in headers]
 
-# Extract all rows
-rows = table.find_elements(By.TAG_NAME, "tr")
-for row in rows:
-    cells = row.find_elements(By.TAG_NAME, "td")
-    cell_texts = [cell.text for cell in cells]
-    if len(cell_texts) > 0:
-        cell_texts = extract_text(cell_texts[0])
-        data.append(cell_texts)
+def select_range_dates(start_date, end_date):
+    # Set the date range
+    driver.find_element(By.ID, "txtStart").clear()
+    driver.find_element(By.ID, "txtStart").send_keys(start_date)
+    end_input = driver.find_element(By.ID, "txtEnd")
+    end_input.clear()
+    end_input.send_keys(end_date)
+    end_input.send_keys(Keys.ENTER)
+    print("Selected range dates and triggered search!")
 
-print(data)
+    # Wait for the table to be replaced (stale) and reappear
+    old_table = driver.find_element(By.CSS_SELECTOR, ".table.table-striped.table-bordered.table-hover.table-condensed")
+    WebDriverWait(driver, 10).until(EC.staleness_of(old_table))
+    new_table = WebDriverWait(driver, 10).until(
+        EC.presence_of_element_located((By.CSS_SELECTOR, ".table.table-striped.table-bordered.table-hover.table-condensed"))
+    )
 
-# header_texts = extract_text(header_texts[0])
-# for header in header_texts:
-#     print(header)
+    # Now extract the table
+    data = []
+    data_dict = {}
+    rows = new_table.find_elements(By.TAG_NAME, "tr")
+    for row in rows:
+        cells = row.find_elements(By.TAG_NAME, "td")
+        cell_texts = [cell.text for cell in cells]
+        if len(cell_texts) > 0:
+            cell_texts = extract_text(cell_texts[0])
+            data.append(cell_texts)
+    for row in data:
+        data_dict[row[0]] = row
+
+    return data_dict
+
+# Usage:
+data_dict = select_range_dates("01/01/2025", "05/31/2025")
+print(data_dict)
+
+
 
 
 
