@@ -1,3 +1,4 @@
 venv/
 backend/.env
 chromedriver-mac-arm64/
+__pycache__/
