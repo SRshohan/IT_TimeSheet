@@ -147,6 +147,20 @@ print(submit_time_selection.text)
 submit_time_selection.click()
 time.sleep(5)
 
+# 1. Find all date headers
+headers = driver.find_elements(By.CSS_SELECTOR, 'table.bordertable td.dbheader')
+target_date = "Tuesday May 13, 2025"
+target_index = -1
+
+for index, header in enumerate(headers):
+    if target_date in header.text:
+        target_index = index
+        print(f"Found target date at index: {target_index} : {target_date}")
+        break
+
+if target_index == -1:
+    raise Exception("Date not found in headers")
+
 
 
 
