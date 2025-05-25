@@ -3,5 +3,5 @@
 
 ## Steps 1
 
-Setuo
+Setup
 
