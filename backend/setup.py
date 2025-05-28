@@ -15,6 +15,30 @@ import string
 
 load_dotenv()
 
+from selenium.webdriver.common.by import By
+from datetime import datetime
+
+def extract_all_timesheet_dates(driver):
+    dates = []
+
+    # Get all table header cells
+    headers = driver.find_elements(By.CLASS_NAME, "dbheader")
+    
+    for header in headers:
+        text = header.text.strip()
+        # Ex: "Monday \nMay 26, 2025" or just "May 26, 2025"
+        lines = text.split('\n')
+        for line in lines:
+            try:
+                # Attempt to parse each line as a date
+                parsed_date = datetime.strptime(line.strip(), "%B %d, %Y")
+                dates.append(parsed_date)
+                break  # Found a valid date, stop checking other lines in this header
+            except ValueError:
+                continue  # Not a date string, skip to next line/header
+    
+    return dates
+
 
 def select_period_from_terminal(structured_data):
     """
@@ -145,6 +169,12 @@ submit_time_selection = driver.find_element(By.XPATH, '/html/body/div[3]/form/ta
 print(submit_time_selection.text)
 submit_time_selection.click()
 time.sleep(5)
+
+drive = setup_driver()
+
+# 1. Get all dates in the time period
+print(extract_all_timesheet_dates(drive))
+
 
 
 
