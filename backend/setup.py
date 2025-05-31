@@ -15,48 +15,93 @@ import string
 
 load_dotenv()
 
-def enter_hours(driver, start_time, end_time):
+# This function is used to convert the date to a datetime object
+def convert_to_date(date):
+    try:
+        date = date.split("\n")
+        date = date[-1].strip()
+        date = datetime.strptime(date, "%b %d, %Y")
+        return (date, True)
+    except ValueError:
+        return (date, False)
+
+
+# This function is used to enter the hours into the Each Day time sheet
+def enter_hours(driver, start_time, end_time, am_pm):
     try:
         start_time = driver.find_element(By.XPATH, '//*[@id="timein_input_id"]').send_keys(start_time)
         end_time = driver.find_element(By.XPATH, '//*[@id="timeout_input_id"]').send_keys(end_time)
+        am_pm = driver.find_element(By.XPATH, '/html/body/div[3]/form/table[2]/tbody/tr[2]/td[5]/select')
+        am_pm.select_visible_text(am_pm)
         save_button = driver.find_element(By.XPATH, "/html/body/div[3]/form/table[3]/tbody/tr[2]/td/input[2]").click()
         back_button = driver.find_element(By.XPATH, "/html/body/div[3]/form/table[3]/tbody/tr[1]/td/input[1]").click()
+        return True
     except Exception as e:
         print("Error:", e)
+        return False
 
-def print_text_from_xpath(driver):
+
+# This function is used to print the time entries from the time sheet from the self service website
+def time_entries_each_day_to_time_sheet(driver, desired_date):
     date_list = []
     try:
-        element = driver.find_element(By.XPATH, "/html/body/div[3]/table[1]/tbody/tr[5]/td/form/table[1]/tbody")
+        # Wait for the table to be present
+        wait = WebDriverWait(driver, 10)
+        element = wait.until(EC.presence_of_element_located((By.XPATH, "/html/body/div[3]/table[1]/tbody/tr[5]/td")))
+        
+        rows = element.find_elements(By.TAG_NAME, "tr")
+        if len(rows) < 2:
+            print("No time entries found")
+            return [], False
 
-        row_counter = 0
-        for row in element.find_elements(By.TAG_NAME, "tr"):
-            if row_counter >= 2:  # Stop after 2 rows
-                break
+        header_row = rows[0]
+        action_rows = rows[1]
 
-            for col in row.find_elements(By.TAG_NAME, "td"):
-                text = col.text.strip()
-                date_list.append(text)
-                print("Text found:", text)
+        header_cells = header_row.find_elements(By.TAG_NAME, "td")
+        action_cells = action_rows.find_elements(By.TAG_NAME, "td")
+        
+        for index, cell in enumerate(header_cells):
+            text = cell.text.strip()
+            print("Text:", text)
+            date, is_date = convert_to_date(text)
+            if is_date and text == desired_date:
+                date_list.append((date, index))
+                print("Date found:", date)
+                
+                # Get corresponding action cell and wait for it to be clickable
+                action_cell = action_cells[index]
+                try:
+                    # Wait for the "Enter Hours" link to be clickable
+                    enter_hours_link = wait.until(
+                        EC.element_to_be_clickable((By.PARTIAL_LINK_TEXT, "Enter Hours"))
+                    )
+                    enter_hours_link.click()
+                    print("Clicked on: Enter Hours")
+                    time.sleep(5)
+                except Exception as e:
+                    print(f"Error clicking Enter Hours: {e}")
+                    return date_list, False
 
-            row_counter += 1
-
-        print("Final date list:", date_list)
-        return date_list
+        return date_list, bool(date_list)
 
     except Exception as e:
         print("Error:", e)
+        return [], False
 
+
+# This function is used to go to the next and previous page of the time sheet
 def nextAndPrevious(driver):
     try:
         next_button = driver.find_element(By.XPATH, "/html/body/div[3]/table[1]/tbody/tr[5]/td/form/table[2]/tbody/tr/td[6]/input")
-        print(next_button.get_attribute("value"))
+        value = next_button.get_attribute("value")
+        print(value)
         next_button.click()
-        time.sleep(5)
-        print_text_from_xpath(driver)
+        return value
     except Exception as e:
         print("Error:", e)
    
+
+# This function is used to select a period from the terminal
 def select_period_from_terminal(structured_data):
     """
     Presents the structured_data as lettered options in the terminal, prompts the user for a letter,
@@ -77,6 +122,7 @@ def select_period_from_terminal(structured_data):
         print("Invalid selection.")
         return None
 
+# This function is used to parse the line of the time period
 def parse_line(line):
     # Example: "May 11, 2025 to May 24, 2025 In Progress"
     match = re.match(r"([A-Za-z]{3,9} \d{1,2}, \d{4}) to ([A-Za-z]{3,9} \d{1,2}, \d{4}) (.+)", line)
@@ -91,6 +137,7 @@ def parse_line(line):
         "status": status
     }
 
+# This function is used to setup the driver
 def setup_driver():
     # Get the path of the current file
     path = "../chromedriver-mac-arm64/chromedriver"
@@ -106,8 +153,8 @@ def setup_driver():
 
     return driver
 
-driver = setup_driver()
 
+# This function is used to login to the self service website
 def login_to_self_service(driver):
     driver.get("https://selfservice.manhattan.edu/")
 
@@ -170,7 +217,7 @@ def login_to_self_service(driver):
 
 
 # This function is used to extract the time from the self service website
-def extract_time_from_self_service(driver):
+def extract_time_from_self_service_and_select_period(driver):
 
     structured_data = login_to_self_service(driver)
     # 1. Show options and get user selection
@@ -184,21 +231,45 @@ def extract_time_from_self_service(driver):
         select.select_by_index(selected_idx)
         print("Selected in browser:", selected_period)
         time.sleep(5)
-        return selected_period
+        submit_time_selection = driver.find_element(By.XPATH, '/html/body/div[3]/form/table[2]/tbody/tr/td/input')
+        print("Submit Time Selection:", submit_time_selection.text)
+        submit_time_selection.click()
+        time.sleep(10)
+        _, desired_date_found = time_entries_each_day_to_time_sheet(driver, 'Monday\nMay 26, 2025')
+        print("Desired date found:", desired_date_found)
+        if desired_date_found:
+            result = enter_hours(driver, '10:00', '12:00', 'PM')
+            print("Result:", result)
+            return selected_period, result
+        else:
+            print("Desired date not found")
+            return selected_period, False
     else:
         print("No valid selection made.")
 
-timeframe = extract_time_from_self_service(driver)
 
-submit_time_selection = driver.find_element(By.XPATH, '/html/body/div[3]/form/table[2]/tbody/tr/td/input')
-print("Submit Time Selection:", submit_time_selection.text)
-submit_time_selection.click()
-time.sleep(5)
+def enter_time_each_day(driver):
+    time_entries = time_entries_each_day_to_time_sheet(driver)
+    for time_entry in time_entries:
+        enter_hours(driver, time_entry["start_date"], time_entry["end_date"])
+        time.sleep(5)
+        nextAndPrevious(driver)
+        
+
+# timeframe = extract_time_from_self_service(driver)
+
+# submit_time_selection = driver.find_element(By.XPATH, '/html/body/div[3]/form/table[2]/tbody/tr/td/input')
+# print("Submit Time Selection:", submit_time_selection.text)
+# submit_time_selection.click()
+# time.sleep(5)
+
 
 if __name__ == "__main__":
+    driver = setup_driver()
     # 1. Get all dates in the time period
-    print_text_from_xpath(driver)
-    nextAndPrevious(driver)
+    selected_period, result = extract_time_from_self_service_and_select_period(driver)
+    print(selected_period, result)
+    
 
 
 

@@ -24,7 +24,7 @@ def create_db():
 
     # Daily hours entries table
     cursor.execute('''
-        CREATE TABLE IF NOT EXISTS hours_entries (
+        CREATE TABLE IF NOT EXISTS hours_entries_openclock (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             user_id INTEGER NOT NULL,
             entry_date DATE NOT NULL,
@@ -38,15 +38,15 @@ def create_db():
         ''')
 
     cursor.execute(''' 
-        CREATE TABLE IF NOT EXISTS time_entries (
+        CREATE TABLE IF NOT EXISTS time_entry_eachday_self_service_status (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             user_id INTEGER NOT NULL,
-            entry_date DATE NOT NULL,
-            end_date DATE NOT NULL,
-            status TEXT NOT NULL DEFAULT 'Pending',
+            date DATE NOT NULL,
+            status TEXT NOT NULL DEFAULT 'No',
             FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
             );
         ''')
+    
 
     conn.commit()
     conn.close()
@@ -123,12 +123,12 @@ def insert_time_entries(conn, user_name, row):
         VALUES (?, ?, ?, ?)
         ''', (
             user_id,
-            row["start_date"].strip(),
-            row["end_date"].strip(),
-            row["status"].strip()
+            row["start_date"],
+            row["end_date"],
+            row["status"]
         ))
     conn.commit()
-    print("Inserted:", row[0].strip(), row[1].strip())
+    print("Inserted:", row["start_date"], row["end_date"])
     
 
 if __name__ == "__main__":
@@ -138,6 +138,7 @@ if __name__ == "__main__":
     driver = setup.setup_driver()
     print("Driver setup complete")
     selected_period = setup.extract_time_from_self_service(driver)
+    print("Selected period from self service:", selected_period)
 
     def extractTimeSelfService(data: dict):
         insert_time_entries(db, username, data)
@@ -151,6 +152,8 @@ if __name__ == "__main__":
     
     if not check_user_exists(db, username):
         insert_user(db, "Sohanur", username, "sohanur")
+
+    extractTimeSelfService(selected_period)
     
     # data = extract_time.select_range_dates(username, "05/27/2025", "05/31/2025")
     # print(data)
