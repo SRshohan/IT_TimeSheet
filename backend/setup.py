@@ -31,62 +31,53 @@ def enter_hours(driver, start_time, end_time, am_pm):
     try:
         start_time = driver.find_element(By.XPATH, '//*[@id="timein_input_id"]').send_keys(start_time)
         end_time = driver.find_element(By.XPATH, '//*[@id="timeout_input_id"]').send_keys(end_time)
-        am_pm = driver.find_element(By.XPATH, '/html/body/div[3]/form/table[2]/tbody/tr[2]/td[5]/select')
-        am_pm.select_visible_text(am_pm)
+        am_pm_dropdown = driver.find_element(By.XPATH, '/html/body/div[3]/form/table[2]/tbody/tr[2]/td[5]/select')
+        dropdown = Select(am_pm_dropdown)
+        dropdown.select_by_visible_text(am_pm)
         save_button = driver.find_element(By.XPATH, "/html/body/div[3]/form/table[3]/tbody/tr[2]/td/input[2]").click()
         back_button = driver.find_element(By.XPATH, "/html/body/div[3]/form/table[3]/tbody/tr[1]/td/input[1]").click()
         return True
     except Exception as e:
-        print("Error:", e)
+        print("Error entering hours function:", e)
         return False
 
 
-# This function is used to print the time entries from the time sheet from the self service website
 def time_entries_each_day_to_time_sheet(driver, desired_date):
     date_list = []
     try:
-        # Wait for the table to be present
         wait = WebDriverWait(driver, 10)
-        element = wait.until(EC.presence_of_element_located((By.XPATH, "/html/body/div[3]/table[1]/tbody/tr[5]/td")))
-        
-        rows = element.find_elements(By.TAG_NAME, "tr")
+
+        # Wait for table to be ready
+        table = wait.until(EC.presence_of_element_located((By.XPATH, "/html/body/div[3]/table[1]/tbody/tr[5]/td")))
+        rows = table.find_elements(By.TAG_NAME, "tr")
+
         if len(rows) < 2:
             print("No time entries found")
             return [], False
 
-        header_row = rows[0]
-        action_rows = rows[1]
+        header_cells = rows[0].find_elements(By.TAG_NAME, "td")
+        action_cells = rows[1].find_elements(By.TAG_NAME, "td")
 
-        header_cells = header_row.find_elements(By.TAG_NAME, "td")
-        action_cells = action_rows.find_elements(By.TAG_NAME, "td")
-        
         for index, cell in enumerate(header_cells):
             text = cell.text.strip()
-            print("Text:", text)
             date, is_date = convert_to_date(text)
-            if is_date and text == desired_date:
-                date_list.append((date, index))
-                print("Date found:", date)
-                
-                # Get corresponding action cell and wait for it to be clickable
-                action_cell = action_cells[index]
-                try:
-                    # Wait for the "Enter Hours" link to be clickable
-                    enter_hours_link = wait.until(
-                        EC.element_to_be_clickable((By.PARTIAL_LINK_TEXT, "Enter Hours"))
-                    )
-                    enter_hours_link.click()
-                    print("Clicked on: Enter Hours")
-                    time.sleep(5)
-                except Exception as e:
-                    print(f"Error clicking Enter Hours: {e}")
-                    return date_list, False
 
-        return date_list, bool(date_list)
+            if is_date and text == desired_date:
+                print("Date found:", date)
+                date_list.append((date, index))
+
+                # ✅ Only interact with this element once (don't touch old DOM after click)
+                enter_hours_link = action_cells[index].find_element(By.PARTIAL_LINK_TEXT, "Enter Hours")
+                enter_hours_link.click()
+
+                return date_list, True
+
+        return date_list, False
 
     except Exception as e:
         print("Error:", e)
         return [], False
+
 
 
 # This function is used to go to the next and previous page of the time sheet
@@ -234,10 +225,11 @@ def extract_time_from_self_service_and_select_period(driver):
         submit_time_selection = driver.find_element(By.XPATH, '/html/body/div[3]/form/table[2]/tbody/tr/td/input')
         print("Submit Time Selection:", submit_time_selection.text)
         submit_time_selection.click()
-        time.sleep(10)
+        time.sleep(3)
         _, desired_date_found = time_entries_each_day_to_time_sheet(driver, 'Monday\nMay 26, 2025')
         print("Desired date found:", desired_date_found)
         if desired_date_found:
+            print("Entering hours")
             result = enter_hours(driver, '10:00', '12:00', 'PM')
             print("Result:", result)
             return selected_period, result
