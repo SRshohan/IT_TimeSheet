@@ -41,7 +41,8 @@ def create_db():
         CREATE TABLE IF NOT EXISTS time_entry_eachday_self_service_status (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             user_id INTEGER NOT NULL,
-            date DATE NOT NULL,
+            start_date DATE NOT NULL,
+            end_date DATE NOT NULL,
             status TEXT NOT NULL DEFAULT 'No',
             FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
             );
@@ -62,7 +63,7 @@ def insert_user(conn, first_name, username, password):
     conn.commit()
 
 
-def parse_row_and_insert(conn, user_name, row):
+def parse_row_and_insert_from_openclock(conn, user_name, row):
     if len(row) < 6:
         print("Row incomplete:", row)
         return
@@ -93,10 +94,14 @@ def parse_row_and_insert(conn, user_name, row):
         cursor = conn.cursor()
         cursor.execute('SELECT id FROM users WHERE username = ?', (user_name,))
         user_id = cursor.fetchone()[0]
+        find_same_time_and_date = cursor.execute('SELECT * FROM hours_entries_openclock WHERE user_id = (?) AND entry_date = (?) AND shift_in = (?) AND shift_out = (?)', (user_id, entry_date, shift_in_dt.strftime("%H:%M:%S"), shift_out_dt.strftime("%H:%M:%S")))
+        if find_same_time_and_date:
+            print("Same time and date already exists")
+            return
 
         # Insert the row
         cursor.execute('''
-            INSERT INTO hours_entries (user_id, entry_date, shift_in, shift_out, hours_worked, notes)
+            INSERT INTO hours_entries_openclock (user_id, entry_date, shift_in, shift_out, hours_worked, notes)
             VALUES (?, ?, ?, ?, ?, ?)
         ''', (
             user_id,
@@ -119,7 +124,7 @@ def insert_time_entries(conn, user_name, row):
     user_id = cursor.fetchone()[0]
 
     cursor.execute('''
-        INSERT INTO time_entries (user_id, entry_date, end_date, status)
+        INSERT INTO time_entry_eachday_self_service_status (user_id, start_date, end_date, status)
         VALUES (?, ?, ?, ?)
         ''', (
             user_id,
@@ -129,18 +134,27 @@ def insert_time_entries(conn, user_name, row):
         ))
     conn.commit()
     print("Inserted:", row["start_date"], row["end_date"])
-    
+
+
+def query_hours_entries_openclock(conn, user_name, entry_date):
+    cursor = conn.cursor()
+    cursor.execute('SELECT id FROM users WHERE username = ?', (user_name,))
+    user_id = cursor.fetchone()[0]
+    cursor.execute('SELECT * FROM hours_entries_openclock WHERE user_id = (?) AND entry_date = (?))', (user_id, entry_date))
+    return cursor.fetchall()
+
 
 if __name__ == "__main__":
     username = "srahman06"
 
     db = database_setup()
     driver = setup.setup_driver()
+    create_db()
     print("Driver setup complete")
-    selected_period = setup.extract_time_from_self_service(driver)
+    selected_period = setup.extract_time_from_self_service_and_select_period(driver)
     print("Selected period from self service:", selected_period)
 
-    def extractTimeSelfService(data: dict):
+    def extractTimePeriodSelfService(data: dict):
         insert_time_entries(db, username, data)
         print("Inserted time entries from organizeData.py:", data)
         return data
@@ -153,11 +167,24 @@ if __name__ == "__main__":
     if not check_user_exists(db, username):
         insert_user(db, "Sohanur", username, "sohanur")
 
-    extractTimeSelfService(selected_period)
+    extractTimePeriodSelfService(selected_period)
     
-    # data = extract_time.select_range_dates(username, "05/27/2025", "05/31/2025")
-    # print(data)
-    # parse_row_and_insert(db, username, data[0])
+    data = extract_time.select_range_dates(username, "05/27/2025", "05/31/2025")
+    print(data)
+    parse_row_and_insert_from_openclock(db, username, data[0])
+    # def convert_date_to_required_format(date):
+    #     date_obj = datetime.strptime(date, "%Y-%m-%d")
+
+    #     # Convert to required format
+    #     formatted_date = date_obj.strftime("%A\n%b %d, %Y")
+
+    #     return formatted_date
+    # conn = database_setup()
+    # data = query_hours_entries_openclock(conn, "srahman06", "2025-05-27")
+    
+    # print(convert_date_to_required_format(data[0][2]))
+
+
 
 
 

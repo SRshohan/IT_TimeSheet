@@ -15,6 +15,13 @@ import string
 
 load_dotenv()
 
+def convert_date_to_required_format(date):
+    date_obj = datetime.strptime(date, "%Y-%m-%d")
+
+    # Convert to required format
+    formatted_date = date_obj.strftime("%A\n%b %d, %Y")
+    print(formatted_date)
+
 # This function is used to convert the date to a datetime object
 def convert_to_date(date):
     try:
@@ -226,16 +233,16 @@ def extract_time_from_self_service_and_select_period(driver):
         print("Submit Time Selection:", submit_time_selection.text)
         submit_time_selection.click()
         time.sleep(3)
-        _, desired_date_found = time_entries_each_day_to_time_sheet(driver, 'Monday\nMay 26, 2025')
-        print("Desired date found:", desired_date_found)
-        if desired_date_found:
-            print("Entering hours")
-            result = enter_hours(driver, '10:00', '12:00', 'PM')
-            print("Result:", result)
-            return selected_period, result
-        else:
-            print("Desired date not found")
-            return selected_period, False
+        # _, desired_date_found = time_entries_each_day_to_time_sheet(driver, 'Monday\nMay 26, 2025')
+        # print("Desired date found:", desired_date_found)
+        # if desired_date_found:
+        #     print("Entering hours")
+        #     result = enter_hours(driver, '10:00', '12:00', 'PM')
+        #     print("Result:", result)
+        #     return selected_period, result
+        # else:
+        #     print("Desired date not found")
+        return selected_period
     else:
         print("No valid selection made.")
 
@@ -247,6 +254,7 @@ def enter_time_each_day(driver):
         time.sleep(5)
         nextAndPrevious(driver)
         
+
 
 # timeframe = extract_time_from_self_service(driver)
 
