@@ -110,7 +110,7 @@ def select_period_from_terminal(structured_data):
         letter = string.ascii_uppercase[idx]
         print(f"{letter}) {period['start_date'].strftime('%b %d, %Y')} to {period['end_date'].strftime('%b %d, %Y')} - {period['status']}")
 
-    choice = input("Enter your choice (A, B, C, ...): ").strip().upper()
+    choice = "A"
     try:
         selected_idx = string.ascii_uppercase.index(choice)
         selected_period = structured_data[selected_idx]
