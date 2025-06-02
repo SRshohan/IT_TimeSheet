@@ -53,7 +53,9 @@ if __name__ == "__main__":
 
     # This is the date period from the self service website
     start_date = convert_date_to_required_format(date_period["start_date"])
+    print("start_date", start_date)
     end_date = convert_date_to_required_format(date_period["end_date"])
+    print("end_date", end_date)
     dump = select_range_dates(username, start_date, end_date)
     for row in dump:
         print("row", row)
