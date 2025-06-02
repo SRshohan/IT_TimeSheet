@@ -21,52 +21,85 @@ username = os.getenv("USERNAME")
 
 # This function is used to convert the time to the required format
 def convert_time_24_to_12_format(time):
-    time_obj = datetime.strptime(time, "%H:%M:%S")
-    formatted_time = time_obj.strftime("%I:%M %p")
+    time_obj = datetime.strptime(time, "%H:%M:%S") # Format: 10:00:00
+    formatted_time = time_obj.strftime("%I:%M %p") # Format: 10:00 AM
     return formatted_time.split()
 
 # Convert the date to the required format
 def convert_date_to_required_format(date):
-    date_obj = datetime.strptime(date, "%Y-%m-%d")
+    date_obj = datetime.strptime(date, "%Y-%m-%d") # Format: 2025-05-26
 
     # Convert to required format
-    formatted_date = date_obj.strftime("%A\n%b %d, %Y")
+    formatted_date = date_obj.strftime("%A\n%b %d, %Y") # Format: Monday\nMay 26, 2025
     print(formatted_date)
 
 # This function is used to convert the date to a datetime object
 def convert_to_date(date):
     try:
         date = date.split("\n")
-        date = date[-1].strip()
-        date = datetime.strptime(date, "%b %d, %Y")
-        return (date, True)
+        date = date[-1].strip()  # e.g., "Jun 02, 2025"
+        date_obj = datetime.strptime(date, "%b %d, %Y")
+        formatted_date = date_obj.strftime("%Y-%m-%d")  # Format: 2025-06-02
+        return (formatted_date, True)
     except ValueError:
         return (date, False)
 
 
 # This function is used to enter the hours into the Each Day time sheet
-def enter_hours(driver, start_time, end_time):
+def convert_time_24_to_12_format(time_str):
+    """Converts '18:00:00' to ('06:00', 'PM')"""
+    time_obj = datetime.strptime(time_str, "%H:%M:%S")
+    return time_obj.strftime("%I:%M"), time_obj.strftime("%p")
+
+def enter_all_hours(driver, shifts):
+    """
+    shifts: a list of tuples, e.g.,
+    [('10:00:00', '12:00:00'), ('13:00:00', '15:00:00')] — must be 24-hour format with seconds
+    """
     try:
-        start_time, clck_in_am_pm = convert_time_24_to_12_format(start_time)
-        end_time, clck_out_am_pm = convert_time_24_to_12_format(end_time)
-        start_time = driver.find_element(By.XPATH, '//*[@id="timein_input_id"]').send_keys(start_time)
-        end_time = driver.find_element(By.XPATH, '//*[@id="timeout_input_id"]').send_keys(end_time)
-        am_pm_dropdown1 = driver.find_element(By.XPATH, '/html/body/div[3]/form/table[2]/tbody/tr[2]/td[3]/select')
-        dropdown1 = Select(am_pm_dropdown1)
-        dropdown1.select_by_visible_text(clck_in_am_pm)
-        # This is the dropdown for the end time
-        am_pm_dropdown2 = driver.find_element(By.XPATH, '/html/body/div[3]/form/table[2]/tbody/tr[2]/td[5]/select')
-        dropdown2 = Select(am_pm_dropdown2)
-        dropdown2.select_by_visible_text(clck_out_am_pm)
-        save_button = driver.find_element(By.XPATH, "/html/body/div[3]/form/table[3]/tbody/tr[2]/td/input[2]").click()
-        back_button = driver.find_element(By.XPATH, "/html/body/div[3]/form/table[3]/tbody/tr[1]/td/input[1]").click()
+        for i, (start_time_24, end_time_24) in enumerate(shifts):
+            row_index = i + 2  # since HTML rows start at 2nd tr (1-based index)
+            
+            # Convert time
+            start_time, clck_in_am_pm = convert_time_24_to_12_format(start_time_24)
+            end_time, clck_out_am_pm = convert_time_24_to_12_format(end_time_24)
+
+            # Time In
+            timein_input_xpath = f'/html/body/div[3]/form/table[2]/tbody/tr[{row_index}]/td[2]/input'
+            driver.find_element(By.XPATH, timein_input_xpath).send_keys(start_time)
+
+            # Time In AM/PM dropdown
+            timein_dropdown_xpath = f'/html/body/div[3]/form/table[2]/tbody/tr[{row_index}]/td[3]/select'
+            Select(driver.find_element(By.XPATH, timein_dropdown_xpath)).select_by_visible_text(clck_in_am_pm)
+
+            # Time Out
+            timeout_input_xpath = f'/html/body/div[3]/form/table[2]/tbody/tr[{row_index}]/td[4]/input'
+            driver.find_element(By.XPATH, timeout_input_xpath).send_keys(end_time)
+
+            # Time Out AM/PM dropdown
+            timeout_dropdown_xpath = f'/html/body/div[3]/form/table[2]/tbody/tr[{row_index}]/td[5]/select'
+            Select(driver.find_element(By.XPATH, timeout_dropdown_xpath)).select_by_visible_text(clck_out_am_pm)
+
+        # Save and go back once after all entries
+        wait = WebDriverWait(driver, 10)
+        save_button = wait.until(EC.element_to_be_clickable((By.XPATH, "/html/body/div[3]/form/table[3]/tbody/tr[2]/td/input[2]")))
+        save_button.click()
+        
+        # Wait for the page to load after saving
+        wait.until(EC.presence_of_element_located((By.XPATH, "/html/body/div[3]/form/table[3]/tbody/tr[1]/td/input[1]")))
+        back_button = driver.find_element(By.XPATH, "/html/body/div[3]/form/table[3]/tbody/tr[1]/td/input[1]")
+        back_button.click()
+        
+        # Wait for the main page to load
+        wait.until(EC.presence_of_element_located((By.XPATH, "/html/body/div[3]/table[1]/tbody/tr[5]/td")))
         return True
     except Exception as e:
-        print("Error entering hours function:", e)
+        print("Error in enter_all_hours:", e)
         return False
 
 
-def time_entries_each_day_to_time_sheet(driver, desired_date):
+
+def time_entries_each_day_to_time_sheet(driver):
     date_list = []
     try:
         wait = WebDriverWait(driver, 10)
@@ -86,45 +119,54 @@ def time_entries_each_day_to_time_sheet(driver, desired_date):
             text = cell.text.strip()
             date, is_date = convert_to_date(text)
 
-            if is_date and text == desired_date:
+            if is_date:
                 print("Date found:", date)
                 date_list.append((date, index))
+                print("date_list", date_list)
 
-                # ✅ Only interact with this element once (don't touch old DOM after click)
-                enter_hours_link = action_cells[index].find_element(By.PARTIAL_LINK_TEXT, "Enter Hours")
-                enter_hours_link.click()
+                print("Started to query the database for the date:", date, "Type of date:", type(date))
+                
+                # First check if we have any time entries for this date
+                time_entry = query_hours_entries_openclock(db, username, date)
+                print("time_entry", time_entry)
+                
+                if not time_entry or len(time_entry) == 0:
+                    print("No Time entry found for this date, skipping...")
+                    continue
 
-                # This is the time entry from the database  
-                time_entry = query_hours_entries_openclock(db, username, desired_date)
-                if len(time_entry) > 1:
-                    print("Multiple time entries found")
-                    pass
-                    # def enter_multiple_hours(*time_in_entry):
-                    #     # time_in_entry_list = [datetime.strptime(t, "%H:%M:%S") for t in time_in_entry]
-                    #     # time_out_entry_list = [datetime.strptime(t, "%H:%M:%S") for t in time_out_entry]
-                    #     for (clck_in, clck_out) in zip(time_in_entry, time_out_entry):
-                            
-                    # shift_in_total = []
-                    # shift_out_total = []
-                    # print("Multiple time entries found")
-                    # for entry in time_entry:
-                    #     shift_in = entry[3]
-                    #     shift_out = entry[4]
-                              
-                else:
-                    shift_in = time_entry[0][3]
-                    shift_out = time_entry[0][4]
-                    # This is the time entry from the database  
-                    result =enter_hours(driver, shift_in, shift_out)
-                    if result:
-                        print("Time entry entered successfully")
+                # Process the time entries and create shifts list
+                shifts = []
+                print("Processing time entries")
+                for entry in time_entry:
+                    if entry[5] == 0:
+                        print("Time difference is less than 15 minutes, skipping...")
+                        continue
                     else:
-                        print("Time entry not entered")
+                        shifts.append((entry[3], entry[4]))
+                        print("shifts", (entry[3], entry[4]))
+                
+                print("Final shifts list:", shifts)
+                
+                # Only proceed with navigation if we have valid shifts
+                if shifts and len(shifts) > 0:
+                    print("Valid shifts found, navigating to Enter Hours page...")
+                    if action_cells[index].text == "Enter Hours":
+                        enter_hours_link = action_cells[index].find_element(By.PARTIAL_LINK_TEXT, "Enter Hours")
+                        enter_hours_link.click()
                         
+                        # Wait for the new page to load
+                        wait.until(EC.presence_of_element_located((By.XPATH, "/html/body/div[3]/form/table[2]/tbody/tr[2]/td[2]/input")))
+                        
+                        print("Entering hours in the time sheet")
+                        result = enter_all_hours(driver, shifts)
+                        print("result", result)
+                    else:
+                        print("Action cell text:", action_cells[index].text)
+                else:
+                    print("No valid shifts found for this date")
 
-                return date_list, True
-
-        return date_list, False
+        print("Check the date_list", date_list)
+        return date_list, True
 
     except Exception as e:
         print("Error:", e)
@@ -257,8 +299,6 @@ def login_to_self_service(driver):
     else:
         print(duo_header.text)
 
-
-
 # This function is used to extract the time from the self service website
 def extract_time_from_self_service_and_select_period(driver):
 
@@ -278,8 +318,8 @@ def extract_time_from_self_service_and_select_period(driver):
         print("Submit Time Selection:", submit_time_selection.text)
         submit_time_selection.click()
         time.sleep(3)
-        # _, desired_date_found = time_entries_each_day_to_time_sheet(driver, 'Monday\nMay 26, 2025')
-        # print("Desired date found:", desired_date_found)
+        _, desired_date_found = time_entries_each_day_to_time_sheet(driver)
+        print("Desired date found:", desired_date_found)
         # if desired_date_found:
         #     print("Entering hours")
         #     result = enter_hours(driver, '10:00', '12:00', 'PM')
@@ -292,12 +332,12 @@ def extract_time_from_self_service_and_select_period(driver):
         print("No valid selection made.")
 
 
-def enter_time_each_day(driver):
-    time_entries = time_entries_each_day_to_time_sheet(driver)
-    for time_entry in time_entries:
-        enter_hours(driver, time_entry["start_date"], time_entry["end_date"])
-        time.sleep(5)
-        nextAndPrevious(driver)
+# def enter_time_each_day(driver):
+#     time_entries = time_entries_each_day_to_time_sheet(driver)
+#     for time_entry in time_entries:
+#         enter_hours(driver, time_entry["start_date"], time_entry["end_date"])
+#         time.sleep(5)
+#         nextAndPrevious(driver)
         
 
 
@@ -312,8 +352,8 @@ def enter_time_each_day(driver):
 if __name__ == "__main__":
     driver = setup_driver()
     # 1. Get all dates in the time period
-    selected_period, result = extract_time_from_self_service_and_select_period(driver)
-    print(selected_period, result)
+    selected_period = extract_time_from_self_service_and_select_period(driver)
+    print(selected_period)
     
 
 
