@@ -8,13 +8,24 @@ from selenium.webdriver.support.ui import Select
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from dotenv import load_dotenv
-from datetime import datetime
+from datetime import datetime, timedelta
 import re
 import string
-
+from organizeData import query_hours_entries_openclock, database_setup
 
 load_dotenv()
 
+# This is the database connection
+db = database_setup()
+username = os.getenv("USERNAME")
+
+# This function is used to convert the time to the required format
+def convert_time_24_to_12_format(time):
+    time_obj = datetime.strptime(time, "%H:%M:%S")
+    formatted_time = time_obj.strftime("%I:%M %p")
+    return formatted_time.split()
+
+# Convert the date to the required format
 def convert_date_to_required_format(date):
     date_obj = datetime.strptime(date, "%Y-%m-%d")
 
@@ -34,13 +45,19 @@ def convert_to_date(date):
 
 
 # This function is used to enter the hours into the Each Day time sheet
-def enter_hours(driver, start_time, end_time, am_pm):
+def enter_hours(driver, start_time, end_time):
     try:
+        start_time, clck_in_am_pm = convert_time_24_to_12_format(start_time)
+        end_time, clck_out_am_pm = convert_time_24_to_12_format(end_time)
         start_time = driver.find_element(By.XPATH, '//*[@id="timein_input_id"]').send_keys(start_time)
         end_time = driver.find_element(By.XPATH, '//*[@id="timeout_input_id"]').send_keys(end_time)
-        am_pm_dropdown = driver.find_element(By.XPATH, '/html/body/div[3]/form/table[2]/tbody/tr[2]/td[5]/select')
-        dropdown = Select(am_pm_dropdown)
-        dropdown.select_by_visible_text(am_pm)
+        am_pm_dropdown1 = driver.find_element(By.XPATH, '/html/body/div[3]/form/table[2]/tbody/tr[2]/td[3]/select')
+        dropdown1 = Select(am_pm_dropdown1)
+        dropdown1.select_by_visible_text(clck_in_am_pm)
+        # This is the dropdown for the end time
+        am_pm_dropdown2 = driver.find_element(By.XPATH, '/html/body/div[3]/form/table[2]/tbody/tr[2]/td[5]/select')
+        dropdown2 = Select(am_pm_dropdown2)
+        dropdown2.select_by_visible_text(clck_out_am_pm)
         save_button = driver.find_element(By.XPATH, "/html/body/div[3]/form/table[3]/tbody/tr[2]/td/input[2]").click()
         back_button = driver.find_element(By.XPATH, "/html/body/div[3]/form/table[3]/tbody/tr[1]/td/input[1]").click()
         return True
@@ -76,6 +93,34 @@ def time_entries_each_day_to_time_sheet(driver, desired_date):
                 # ✅ Only interact with this element once (don't touch old DOM after click)
                 enter_hours_link = action_cells[index].find_element(By.PARTIAL_LINK_TEXT, "Enter Hours")
                 enter_hours_link.click()
+
+                # This is the time entry from the database  
+                time_entry = query_hours_entries_openclock(db, username, desired_date)
+                if len(time_entry) > 1:
+                    print("Multiple time entries found")
+                    pass
+                    # def enter_multiple_hours(*time_in_entry):
+                    #     # time_in_entry_list = [datetime.strptime(t, "%H:%M:%S") for t in time_in_entry]
+                    #     # time_out_entry_list = [datetime.strptime(t, "%H:%M:%S") for t in time_out_entry]
+                    #     for (clck_in, clck_out) in zip(time_in_entry, time_out_entry):
+                            
+                    # shift_in_total = []
+                    # shift_out_total = []
+                    # print("Multiple time entries found")
+                    # for entry in time_entry:
+                    #     shift_in = entry[3]
+                    #     shift_out = entry[4]
+                              
+                else:
+                    shift_in = time_entry[0][3]
+                    shift_out = time_entry[0][4]
+                    # This is the time entry from the database  
+                    result =enter_hours(driver, shift_in, shift_out)
+                    if result:
+                        print("Time entry entered successfully")
+                    else:
+                        print("Time entry not entered")
+                        
 
                 return date_list, True
 
