@@ -102,68 +102,79 @@ def enter_all_hours(driver, shifts):
 def time_entries_each_day_to_time_sheet(driver):
     date_list = []
     try:
-        wait = WebDriverWait(driver, 10)
+        while True:  # Keep looping until we reach the last page
+            wait = WebDriverWait(driver, 10)
 
-        # Wait for table to be ready
-        table = wait.until(EC.presence_of_element_located((By.XPATH, "/html/body/div[3]/table[1]/tbody/tr[5]/td")))
-        rows = table.find_elements(By.TAG_NAME, "tr")
+            # Wait for table to be ready
+            table = wait.until(EC.presence_of_element_located((By.XPATH, "/html/body/div[3]/table[1]/tbody/tr[5]/td")))
+            rows = table.find_elements(By.TAG_NAME, "tr")
 
-        if len(rows) < 2:
-            print("No time entries found")
-            return [], False
+            if len(rows) < 2:
+                print("No time entries found")
+                return [], False
 
-        header_cells = rows[0].find_elements(By.TAG_NAME, "td")
-        action_cells = rows[1].find_elements(By.TAG_NAME, "td")
+            header_cells = rows[0].find_elements(By.TAG_NAME, "td")
+            action_cells = rows[1].find_elements(By.TAG_NAME, "td")
 
-        for index, cell in enumerate(header_cells):
-            text = cell.text.strip()
-            date, is_date = convert_to_date(text)
+            for index, cell in enumerate(header_cells):
+                text = cell.text.strip()
+                date, is_date = convert_to_date(text)
 
-            if is_date:
-                print("Date found:", date)
-                date_list.append((date, index))
-                print("date_list", date_list)
+                if is_date:
+                    print("Date found:", date)
+                    date_list.append((date, index))
+                    print("date_list", date_list)
 
-                print("Started to query the database for the date:", date, "Type of date:", type(date))
-                
-                # First check if we have any time entries for this date
-                time_entry = query_hours_entries_openclock(db, username, date)
-                print("time_entry", time_entry)
-                
-                if not time_entry or len(time_entry) == 0:
-                    print("No Time entry found for this date, skipping...")
-                    continue
-
-                # Process the time entries and create shifts list
-                shifts = []
-                print("Processing time entries")
-                for entry in time_entry:
-                    if entry[5] == 0:
-                        print("Time difference is less than 15 minutes, skipping...")
+                    print("Started to query the database for the date:", date, "Type of date:", type(date))
+                    
+                    # First check if we have any time entries for this date
+                    time_entry = query_hours_entries_openclock(db, username, date)
+                    print("time_entry", time_entry)
+                    
+                    if not time_entry or len(time_entry) == 0:
+                        print("No Time entry found for this date, skipping...")
                         continue
+
+                    # Process the time entries and create shifts list
+                    shifts = []
+                    print("Processing time entries")
+                    for entry in time_entry:
+                        if entry[5] == 0:
+                            print("Time difference is less than 15 minutes, skipping...")
+                            continue
+                        else:
+                            shifts.append((entry[3], entry[4]))
+                            print("shifts", (entry[3], entry[4]))
+                    
+                    print("Final shifts list:", shifts)
+                    
+                    # Only proceed with navigation if we have valid shifts
+                    if shifts and len(shifts) > 0:
+                        print("Valid shifts found, navigating to Enter Hours page...")
+                        if action_cells[index].text == "Enter Hours":
+                            enter_hours_link = action_cells[index].find_element(By.PARTIAL_LINK_TEXT, "Enter Hours")
+                            enter_hours_link.click()
+                            
+                            # Wait for the new page to load
+                            wait.until(EC.presence_of_element_located((By.XPATH, "/html/body/div[3]/form/table[2]/tbody/tr[2]/td[2]/input")))
+                            
+                            print("Entering hours in the time sheet")
+                            result = enter_all_hours(driver, shifts)
+                            print("result", result)
+                        else:
+                            print("Action cell text:", action_cells[index].text)
                     else:
-                        shifts.append((entry[3], entry[4]))
-                        print("shifts", (entry[3], entry[4]))
-                
-                print("Final shifts list:", shifts)
-                
-                # Only proceed with navigation if we have valid shifts
-                if shifts and len(shifts) > 0:
-                    print("Valid shifts found, navigating to Enter Hours page...")
-                    if action_cells[index].text == "Enter Hours":
-                        enter_hours_link = action_cells[index].find_element(By.PARTIAL_LINK_TEXT, "Enter Hours")
-                        enter_hours_link.click()
-                        
-                        # Wait for the new page to load
-                        wait.until(EC.presence_of_element_located((By.XPATH, "/html/body/div[3]/form/table[2]/tbody/tr[2]/td[2]/input")))
-                        
-                        print("Entering hours in the time sheet")
-                        result = enter_all_hours(driver, shifts)
-                        print("result", result)
-                    else:
-                        print("Action cell text:", action_cells[index].text)
-                else:
-                    print("No valid shifts found for this date")
+                        print("No valid shifts found for this date")
+
+            # Use the existing nextAndPrevious function to handle page navigation
+            button_text = nextAndPrevious(driver)
+            if button_text == "Previous":
+                print("Reached the last page, stopping...")
+                break
+            else:
+                print("Moving to next page...")
+                # Wait for the new page to load
+                wait.until(EC.presence_of_element_located((By.XPATH, "/html/body/div[3]/table[1]/tbody/tr[5]/td")))
 
         print("Check the date_list", date_list)
         return date_list, True
