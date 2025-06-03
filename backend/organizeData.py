@@ -1,7 +1,7 @@
-import extract_time
+# import extract_time
 import sqlite3
 from datetime import datetime
-import setup
+# import setup
 
 def database_setup():
     conn = sqlite3.connect("app.db")
@@ -140,38 +140,41 @@ def query_hours_entries_openclock(conn, user_name, entry_date):
     cursor = conn.cursor()
     cursor.execute('SELECT id FROM users WHERE username = ?', (user_name,))
     user_id = cursor.fetchone()[0]
-    cursor.execute('SELECT * FROM hours_entries_openclock WHERE user_id = (?) AND entry_date = (?))', (user_id, entry_date))
-    return cursor.fetchall()
+    res = cursor.execute('SELECT * FROM hours_entries_openclock WHERE user_id = (?) AND entry_date = (?)', (user_id, entry_date))
+    if res:
+        return cursor.fetchall()
+    else:
+        return None
 
 
-if __name__ == "__main__":
-    username = "srahman06"
+# if __name__ == "__main__":
+#     username = "srahman06"
 
-    db = database_setup()
-    driver = setup.setup_driver()
-    create_db()
-    print("Driver setup complete")
-    selected_period = setup.extract_time_from_self_service_and_select_period(driver)
-    print("Selected period from self service:", selected_period)
+#     db = database_setup()
+#     driver = setup.setup_driver()
+#     create_db()
+#     print("Driver setup complete")
+#     selected_period = setup.extract_time_from_self_service_and_select_period(driver)
+#     print("Selected period from self service:", selected_period)
 
-    def extractTimePeriodSelfService(data: dict):
-        insert_time_entries(db, username, data)
-        print("Inserted time entries from organizeData.py:", data)
-        return data
+#     def extractTimePeriodSelfService(data: dict):
+#         insert_time_entries(db, username, data)
+#         print("Inserted time entries from organizeData.py:", data)
+#         return data
 
-    def check_user_exists(db, username):
-        cursor = db.cursor()
-        cursor.execute('SELECT id FROM users WHERE username = ?', (username,))
-        return cursor.fetchone() is not None
+#     def check_user_exists(db, username):
+#         cursor = db.cursor()
+#         cursor.execute('SELECT id FROM users WHERE username = ?', (username,))
+#         return cursor.fetchone() is not None
     
-    if not check_user_exists(db, username):
-        insert_user(db, "Sohanur", username, "sohanur")
+#     if not check_user_exists(db, username):
+#         insert_user(db, "Sohanur", username, "sohanur")
 
-    extractTimePeriodSelfService(selected_period)
+#     extractTimePeriodSelfService(selected_period)
     
-    data = extract_time.select_range_dates(username, "05/27/2025", "05/31/2025")
-    print(data)
-    parse_row_and_insert_from_openclock(db, username, data[0])
+#     data = extract_time.select_range_dates(username, "05/27/2025", "05/31/2025")
+#     print(data)
+#     parse_row_and_insert_from_openclock(db, username, data[0])
     # def convert_date_to_required_format(date):
     #     date_obj = datetime.strptime(date, "%Y-%m-%d")
 
