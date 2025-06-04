@@ -12,12 +12,14 @@ from datetime import datetime, timedelta
 import re
 import string
 from organizeData import query_hours_entries_openclock, database_setup
+import streamlit as st
 
 load_dotenv()
 
 # This is the database connection
 db = database_setup()
 username = os.getenv("USERNAME")
+password = os.getenv("PASSWORD")
 
 # This function is used to convert the time to the required format
 def convert_time_24_to_12_format(time):
@@ -96,7 +98,6 @@ def enter_all_hours(driver, shifts):
     except Exception as e:
         print("Error in enter_all_hours:", e)
         return False
-
 
 
 def time_entries_each_day_to_time_sheet(driver):
@@ -239,125 +240,176 @@ def setup_driver():
     path = "../chromedriver-mac-arm64/chromedriver"
 
     if not os.path.exists(path):
-        raise Exception("Path doesn't exist!")
+        raise Exception(f"ChromeDriver not found at path: {path}. Please ensure the ChromeDriver is installed in the correct location.")
 
     service = Service(path)
     options = Options()
-    # options.add_argument("--headless=new")  # Uncomment if you want background mode
-
-    driver = webdriver.Chrome(service=service)
-
-    return driver
+    # Add options to prevent multiple instances
+    options.add_argument("--no-sandbox")
+    options.add_argument("--disable-dev-shm-usage")
+    options.add_argument("--disable-gpu")
+    options.add_argument("--disable-extensions")
+    options.add_argument("--disable-software-rasterizer")
+    # Add a unique user data directory to prevent conflicts
+    options.add_argument(f"--user-data-dir=./chrome_profile_{int(time.time())}")
+    
+    try:
+        driver = webdriver.Chrome(service=service, options=options)
+        return driver
+    except Exception as e:
+        raise Exception(f"Failed to create Chrome driver: {str(e)}")
 
 
 # This function is used to login to the self service website
-def login_to_self_service(driver):
-    driver.get("https://selfservice.manhattan.edu/")
-
-    # Click the "Sign In Via JasperNet" link
-    driver.find_element(By.ID, "read-link-0").click()
-    # Now type the username
-    username = os.getenv("USERNAME")
-    password = os.getenv("PASSWORD")
-    driver.find_element(By.ID, "username").send_keys(username)
-    driver.find_element(By.ID, "password").send_keys(password)
-    driver.find_element(By.NAME, "_eventId_proceed").click()
-
-    wait = WebDriverWait(driver, 20)
-    duo_header = wait.until(EC.presence_of_element_located((By.ID, "header-text")))
-
-    if duo_header.text == "Enter code in Duo Mobile":
-        print(duo_header.text)
-        element = driver.find_element(By.CLASS_NAME, "verification-code")
-        code = element.text
-        print(code)
-        time.sleep(10)
-        trust_screen = driver.find_element(By.ID, "trust-this-browser-label")
-        print(trust_screen.text)
-        if trust_screen.text == "Is this your device?":
-            driver.find_element(By.ID, "trust-browser-button").click()
-            time.sleep(5)
-            menu_button = driver.find_element(By.ID, "bannerMenu")
-            menu_button.click()
-            time.sleep(5)
-            banner_text = driver.find_element(By.XPATH, '//*[@id="list_Banner"]/div/div[1]/span')
-            print(banner_text.text)  # Output: Banner 
-            banner_text.click()
-            time.sleep(5)
-            financial_aid = driver.find_element(By.XPATH, '//*[@id="list_Banner_Financial Aid"]/div/div[1]/span')
-            print(financial_aid.text)
-            financial_aid.click()
-            time.sleep(5)
-            student_employment = driver.find_element(By.XPATH, '//*[@id="list_Banner_Financial Aid_Student Employment Menu"]/div/div[1]/span')
-            print(student_employment.text)
-            student_employment.click()
-            time.sleep(5) 
-            time_sheet = driver.find_element(By.XPATH, '//*[@id="list_Banner_Financial Aid_Student Employment Menu_Enter Time Sheet"]/a/div/div/span')
-            print(time_sheet.text)
-            time_sheet.click()
-            time.sleep(5)
-            select_time_period = driver.find_element(By.XPATH, '//*[@id="period_1_id"]')
-            print(select_time_period.text)
-            raw_data = select_time_period.text.split('\n')  # <-- Fix is here
-            select_time_period.click()
-            structured_data = [parse_line(line) for line in raw_data if line.strip()]
-            for period in structured_data:
-                print(period)
-            time.sleep(5)
-            return structured_data
+def login_to_self_service(driver, username, password):
+    try:
+        # Check if we're already logged in
+        if "selfservice.manhattan.edu" in driver.current_url:
+            st.info("Already logged in, proceeding to time sheet...")
         else:
-            print("Duo is not working")
-    else:
-        print(duo_header.text)
+            driver.get("https://selfservice.manhattan.edu/")
 
-# This function is used to extract the time from the self service website
-def extract_time_from_self_service_and_select_period(driver):
+            # Click the "Sign In Via JasperNet" link
+            driver.find_element(By.ID, "read-link-0").click()
+            
+            # Now type the username and password
+            driver.find_element(By.ID, "username").send_keys(username)
+            driver.find_element(By.ID, "password").send_keys(password)
+            driver.find_element(By.NAME, "_eventId_proceed").click()
 
-    structured_data = login_to_self_service(driver)
-    # 1. Show options and get user selection
-    selected_period = select_period_from_terminal(structured_data)
-    if selected_period is not None:
-        # 2. Find the index of the selected period
-        selected_idx = structured_data.index(selected_period)
-        # 3. Select the corresponding option in the dropdown
-        select_elem = driver.find_element(By.ID, "period_1_id")
-        select = Select(select_elem)
-        select.select_by_index(selected_idx)
-        print("Selected in browser:", selected_period)
+            wait = WebDriverWait(driver, 20)
+            duo_header = wait.until(EC.presence_of_element_located((By.ID, "header-text")))
+
+            if duo_header.text == "Enter code in Duo Mobile":
+                element = driver.find_element(By.CLASS_NAME, "verification-code")
+                code = element.text
+                st.info(f"Please enter this code in Duo Mobile: {code}")
+                
+                # Wait for user to enter the code
+                while True:
+                    try:
+                        trust_screen = driver.find_element(By.ID, "trust-this-browser-label")
+                        if trust_screen.text == "Is this your device?":
+                            driver.find_element(By.ID, "trust-browser-button").click()
+                            time.sleep(5)
+                            break
+                    except:
+                        time.sleep(1)
+                        continue
+
+        # Navigate to time sheet
+        st.info("Navigating to time sheet...")
+        menu_button = driver.find_element(By.ID, "bannerMenu")
+        menu_button.click()
         time.sleep(5)
-        submit_time_selection = driver.find_element(By.XPATH, '/html/body/div[3]/form/table[2]/tbody/tr/td/input')
-        print("Submit Time Selection:", submit_time_selection.text)
-        submit_time_selection.click()
-        time.sleep(3)
-        _, desired_date_found = time_entries_each_day_to_time_sheet(driver)
-        print("Desired date found:", desired_date_found)
-        # if desired_date_found:
-        #     print("Entering hours")
-        #     result = enter_hours(driver, '10:00', '12:00', 'PM')
-        #     print("Result:", result)
-        #     return selected_period, result
-        # else:
-        #     print("Desired date not found")
+        
+        banner_text = driver.find_element(By.XPATH, '//*[@id="list_Banner"]/div/div[1]/span')
+        banner_text.click()
+        time.sleep(5)
+        
+        financial_aid = driver.find_element(By.XPATH, '//*[@id="list_Banner_Financial Aid"]/div/div[1]/span')
+        financial_aid.click()
+        time.sleep(5)
+        
+        student_employment = driver.find_element(By.XPATH, '//*[@id="list_Banner_Financial Aid_Student Employment Menu"]/div/div[1]/span')
+        student_employment.click()
+        time.sleep(5)
+        
+        time_sheet = driver.find_element(By.XPATH, '//*[@id="list_Banner_Financial Aid_Student Employment Menu_Enter Time Sheet"]/a/div/div/span')
+        time_sheet.click()
+        time.sleep(5)
+        
+        st.info("Loading time periods...")
+        select_time_period = driver.find_element(By.XPATH, '//*[@id="period_1_id"]')
+        raw_data = select_time_period.text.split('\n')
+        
+        # Parse periods
+        structured_data = []
+        for line in raw_data:
+            if line.strip():
+                try:
+                    period = parse_line(line)
+                    structured_data.append(period)
+                except ValueError:
+                    continue
+        
+        if not structured_data:
+            st.error("No available time periods found")
+            return None
+        
+        # Create dropdown options with status indicators
+        dropdown_options = []
+        for p in structured_data:
+            status_indicator = "✅" if p['status'].lower() == 'completed' else "⏳"
+            dropdown_options.append(
+                f"{status_indicator} {p['start_date'].strftime('%b %d, %Y')} to {p['end_date'].strftime('%b %d, %Y')} - {p['status']}"
+            )
+        
+        # Store the periods in session state if not already there
+        if 'time_periods' not in st.session_state:
+            st.session_state.time_periods = structured_data
+            st.session_state.dropdown_options = dropdown_options
+        
+        # Show dropdown in Streamlit
+        selected_option = st.selectbox(
+            "Select Time Period",
+            options=st.session_state.dropdown_options,
+            key='time_period_select'
+        )
+        
+        # Get the selected period
+        selected_index = st.session_state.dropdown_options.index(selected_option)
+        selected_period = st.session_state.time_periods[selected_index]
+        
+        # Check if the selected period is completed
+        if selected_period['status'].lower() == 'completed':
+            st.warning("This time period is already completed. Please select a different period.")
+            return None
+        
+        # Store the driver in session state for use in extract_time_from_self_service_and_select_period
+        st.session_state.driver = driver
+        
         return selected_period
+            
+    except Exception as e:
+        st.error(f"Error during login: {str(e)}")
+        return None
+
+
+def extract_time_from_self_service_and_select_period(driver):
+    if 'driver' not in st.session_state:
+        st.error("No active browser session found")
+        return None
+        
+    driver = st.session_state.driver
+    selected_period = st.session_state.time_periods[st.session_state.dropdown_options.index(st.session_state.time_period_select)]
+    
+    if selected_period is not None:
+        try:
+            # Select the period in the browser
+            select = Select(driver.find_element(By.ID, "period_1_id"))
+            select.select_by_index(st.session_state.dropdown_options.index(st.session_state.time_period_select) + 1)
+            print("Selected in browser:", selected_period)
+            time.sleep(5)
+            
+            # Submit the selection
+            submit_time_selection = driver.find_element(By.XPATH, '/html/body/div[3]/form/table[2]/tbody/tr/td/input')
+            print("Submit Time Selection:", submit_time_selection.text)
+            submit_time_selection.click()
+            time.sleep(3)
+            
+            
+            _, desired_date_found = time_entries_each_day_to_time_sheet(driver)
+            print("Desired date found:", desired_date_found)
+            
+            return st.session_state.time_periods
+        except Exception as e:
+            st.error(f"Error during time period selection: {str(e)}")
+            return None
     else:
         print("No valid selection made.")
+        return None
 
-
-# def enter_time_each_day(driver):
-#     time_entries = time_entries_each_day_to_time_sheet(driver)
-#     for time_entry in time_entries:
-#         enter_hours(driver, time_entry["start_date"], time_entry["end_date"])
-#         time.sleep(5)
-#         nextAndPrevious(driver)
-        
-
-
-# timeframe = extract_time_from_self_service(driver)
-
-# submit_time_selection = driver.find_element(By.XPATH, '/html/body/div[3]/form/table[2]/tbody/tr/td/input')
-# print("Submit Time Selection:", submit_time_selection.text)
-# submit_time_selection.click()
-# time.sleep(5)
 
 
 if __name__ == "__main__":

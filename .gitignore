@@ -3,3 +3,4 @@ backend/.env
 chromedriver-mac-arm64/
 __pycache__/
 test.ipynb
+backend/chrome_profile_*/
