@@ -110,19 +110,21 @@ if st.button("Enter Time Sheet"):
                         st.session_state.driver.quit()
                         st.session_state.driver = setup_driver()
                 
-                # First login and show the dropdown
-                selected_period = login_to_self_service(st.session_state.driver, username, selfservice_password)
+                # First login and get the structured data
+                structured_data = login_to_self_service(st.session_state.driver, username, selfservice_password)
                 
-                if selected_period is None:
-                    st.error("Failed to load time periods or selected a completed period")
+                if structured_data is None:
+                    st.error("Failed to load time periods")
                 else:
-                    st.success("Time period selected successfully. Processing time entries...")
-                    with st.spinner("Processing time entries..."):
-                        result = extract_time_from_self_service_and_select_period(st.session_state.driver)
-                        if result:
-                            st.success("Time entries processed successfully!")
-                        else:
-                            st.error("Failed to process time entries")
+                    # Store the periods in session state
+                    st.session_state.time_periods = structured_data
+                    
+                    # Now show the dropdown and process time entries
+                    result = extract_time_from_self_service_and_select_period(st.session_state.driver)
+                    if result:
+                        st.success("Time entries processed successfully!")
+                    else:
+                        st.error("Failed to process time entries")
                 
             except Exception as e:
                 st.error(f"Error during time sheet entry: {str(e)}")

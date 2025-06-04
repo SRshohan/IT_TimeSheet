@@ -327,26 +327,6 @@ def login_to_self_service(driver, username, password):
             st.error("No available time periods found")
             return None
         
-        # Create dropdown options with status indicators for Streamlit UI
-        dropdown_options = []
-        for p in structured_data:
-            status_indicator = "✅" if p['status'].lower() == 'completed' else "⏳"
-            dropdown_options.append(
-                f"{status_indicator} {p['start_date'].strftime('%b %d, %Y')} to {p['end_date'].strftime('%b %d, %Y')} - {p['status']}"
-            )
-        
-        # Store the periods in session state if not already there
-        if 'time_periods' not in st.session_state:
-            st.session_state.time_periods = structured_data
-            st.session_state.dropdown_options = dropdown_options
-        
-        # Show dropdown in Streamlit
-        selected_option = st.selectbox(
-            "Select Time Period",
-            options=st.session_state.dropdown_options,
-            key='time_period_select'
-        )
-        
         # Store the driver in session state for use in extract_time_from_self_service_and_select_period
         st.session_state.driver = driver
         
@@ -364,15 +344,29 @@ def extract_time_from_self_service_and_select_period(driver):
         
     driver = st.session_state.driver
     
-    # Get the selected period directly from Streamlit session state
-    if 'time_period_select' not in st.session_state:
-        st.error("No time period selected in Streamlit")
-        return None
-        
-    selected_index = st.session_state.dropdown_options.index(st.session_state.time_period_select)
-    selected_period = st.session_state.time_periods[selected_index]
-    
     try:
+        # Create dropdown options with status indicators for Streamlit UI
+        dropdown_options = []
+        for p in st.session_state.time_periods:
+            status_indicator = "✅" if p['status'].lower() == 'completed' else "⏳"
+            dropdown_options.append(
+                f"{status_indicator} {p['start_date'].strftime('%b %d, %Y')} to {p['end_date'].strftime('%b %d, %Y')} - {p['status']}"
+            )
+        
+        # Store dropdown options in session state
+        st.session_state.dropdown_options = dropdown_options
+        
+        # Show dropdown in Streamlit
+        selected_option = st.selectbox(
+            "Select Time Period",
+            options=dropdown_options,
+            key='time_period_select'
+        )
+        
+        # Get the selected period
+        selected_index = dropdown_options.index(selected_option)
+        selected_period = st.session_state.time_periods[selected_index]
+        
         # Wait for the dropdown to be present
         wait = WebDriverWait(driver, 10)
         dropdown = wait.until(EC.presence_of_element_located((By.ID, "period_1_id")))
@@ -401,7 +395,7 @@ def extract_time_from_self_service_and_select_period(driver):
             st.error("Could not find matching period in self-service dropdown")
             return None
         
-        # Select the period in the self-service dropdown
+        # Select the period in the self-service dropdown using the exact text from the dropdown
         select.select_by_visible_text(matching_option)
         print(f"Selected period in self-service: {matching_option}")
         time.sleep(2)
