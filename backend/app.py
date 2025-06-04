@@ -1,65 +1,146 @@
-from organizeData import database_setup, insert_time_entries, parse_row_and_insert_from_openclock, query_hours_entries_openclock
-from setup import setup_driver, extract_time_from_self_service_and_select_period, enter_hours, time_entries_each_day_to_time_sheet
-from extract_time import select_range_dates
-from datetime import datetime
+from organizeData import database_setup, parse_row_and_insert_from_openclock, query_hours_entries_openclock, insert_user, create_db
+from setup import setup_driver, login_to_self_service, extract_time_from_self_service_and_select_period
+from extract_time import select_range_dates, is_data_up_to_date
+import streamlit as st
+from datetime import datetime, timedelta
+from selenium.webdriver.support.select import Select
+import time
+from selenium.webdriver.common.by import By
 
+# Streamlit UI
+st.title("Time Sheet Automation")
 
-
-# This function is used to get the start and end date from the database
-def get_start_and_end_date(db, username, status: str):
-    cursor = db.cursor()
-    # First get the user_id from username
-    cursor.execute('SELECT id FROM users WHERE username = ?', (username,))
-    user_id = cursor.fetchone()
+# Sidebar for configuration
+with st.sidebar:
+    st.header("Configuration")
     
-    if user_id is None:
-        print(f"No user found with username: {username}")
-        return None
-        
-    user_id = user_id[0]  # Get the actual id value
+    # Username (shared between OpenClock and Self-Service)
+    st.subheader("Username")
+    username = st.text_input("Username", value=st.session_state.get('username', ''))
     
-    # Now query with the user_id
-    cursor.execute('''
-        SELECT start_date, end_date, status 
-        FROM time_entry_eachday_self_service_status 
-        WHERE user_id = ? AND status = ?
-    ''', (user_id, status))
+    # Passwords
+    st.subheader("Passwords")
+    openclock_password = st.text_input("OpenClock Password", type="password", value=st.session_state.get('openclock_password', ''))
+    selfservice_password = st.text_input("Self-Service Password", type="password", value=st.session_state.get('selfservice_password', ''))
     
-    result = cursor.fetchone()
-    if result is None:
-        print(f"No time entry found for user {username} with status {status}")
-        return None
-        
-    return {
-        "start_date": result[0].split()[0],
-        "end_date": result[1].split()[0],
-        "status": result[2]
-    }
+    # Save credentials to session state
+    if username:
+        st.session_state.username = username
+    if openclock_password:
+        st.session_state.openclock_password = openclock_password
+    if selfservice_password:
+        st.session_state.selfservice_password = selfservice_password
 
-# This function is used to convert the date to the required format
-def convert_date_to_required_format(date):
-        date_obj = datetime.strptime(date, "%Y-%m-%d")
-        formatted_date = date_obj.strftime("%m/%d/%Y")
-        return formatted_date
+# Main content
+st.header("Data Extraction")
 
-if __name__ == "__main__":
-    username = "srahman06"
-    db = database_setup()
-    driver = setup_driver()
-    selected_period = extract_time_from_self_service_and_select_period(driver)
-    
-    date_period = get_start_and_end_date(db, username, "In Progress")
-    print("date_period", date_period)
+# Date range selection
+col1, col2 = st.columns(2)
+with col1:
+    start_date = st.date_input("Start Date", value=datetime.now() - timedelta(days=30))
+with col2:
+    end_date = st.date_input("End Date", value=datetime.now())
 
-    # This is the date period from the self service website
-    start_date = convert_date_to_required_format(date_period["start_date"])
-    print("start_date", start_date)
-    end_date = convert_date_to_required_format(date_period["end_date"])
-    print("end_date", end_date)
-    dump = select_range_dates(username, start_date, end_date)
-    for row in dump:
-        print("row", row)
-        parse_row_and_insert_from_openclock(db, username, row)
+# Format dates for OpenClock
+start_date_str = start_date.strftime("%m/%d/%Y")
+end_date_str = end_date.strftime("%m/%d/%Y")
+
+# Manual extraction button
+if st.button("Extract Data from OpenClock"):
+    if not username or not openclock_password:
+        st.error("Please enter your username and OpenClock password in the sidebar")
+    else:
+        with st.spinner("Extracting data from OpenClock..."):
+            try:
+                # Initialize database
+                db = database_setup()
+                create_db()
+                
+                # Check if user exists, if not create them
+                cursor = db.cursor()
+                cursor.execute('SELECT id FROM users WHERE username = ?', (username,))
+                if not cursor.fetchone():
+                    st.info(f"Creating new user: {username}")
+                    insert_user(db, username, username, openclock_password)
+                
+                result = select_range_dates(username, openclock_password, start_date_str, end_date_str)
+                if result['data']:
+                    # Parse and insert data into SQLite
+                    for row in result['data']:
+                        parse_row_and_insert_from_openclock(db, username, row)
+                    st.success(f"Data extracted and stored successfully from {result['start_date']} to {result['end_date']}")
+                else:
+                    st.warning("No data found for the selected date range")
+            except Exception as e:
+                st.error(f"Error extracting data: {str(e)}")
+
+# Self-Service Time Sheet Entry
+st.header("Self-Service Time Sheet Entry")
+
+# Initialize driver in session state if not exists
+if 'driver' not in st.session_state:
+    st.session_state.driver = None
+
+# Add a cleanup button at the top of the page
+if st.button("Close Browser"):
+    if st.session_state.driver:
+        try:
+            st.session_state.driver.quit()
+            st.session_state.driver = None
+            st.success("Browser closed successfully")
+        except Exception as e:
+            st.error(f"Error closing browser: {str(e)}")
+            st.session_state.driver = None
+
+if st.button("Enter Time Sheet"):
+    if not username or not selfservice_password:
+        st.error("Please enter your username and Self-Service password in the sidebar")
+    else:
+        with st.spinner("Setting up browser..."):
+            try:
+                # Only create new driver if one doesn't exist
+                if st.session_state.driver is None:
+                    st.session_state.driver = setup_driver()
+                else:
+                    try:
+                        # Test if the existing driver is still responsive
+                        st.session_state.driver.current_url
+                    except:
+                        # If not responsive, create a new one
+                        st.session_state.driver.quit()
+                        st.session_state.driver = setup_driver()
+                
+                # First login and show the dropdown
+                selected_period = login_to_self_service(st.session_state.driver, username, selfservice_password)
+                
+                if selected_period is None:
+                    st.error("Failed to load time periods or selected a completed period")
+                else:
+                    st.success("Time period selected successfully. Processing time entries...")
+                    with st.spinner("Processing time entries..."):
+                        result = extract_time_from_self_service_and_select_period(st.session_state.driver)
+                        if result:
+                            st.success("Time entries processed successfully!")
+                        else:
+                            st.error("Failed to process time entries")
+                
+            except Exception as e:
+                st.error(f"Error during time sheet entry: {str(e)}")
+                # Clean up driver on error
+                if st.session_state.driver:
+                    try:
+                        st.session_state.driver.quit()
+                    except:
+                        pass
+                    st.session_state.driver = None
+
+# Data Status
+st.header("Data Status")
+if is_data_up_to_date():
+    st.success("✅ Your data is up to date")
+else:
+    st.warning("⚠️ Your data needs to be updated")
+
 
 
     

@@ -77,15 +77,19 @@ def parse_row_and_insert_from_openclock(conn, user_name, row):
         # Convert shift_in and shift_out to datetime objects
         shift_in_str = row[1].strip()
         shift_out_str = row[2].strip()
-        if shift_out_str == "missing":
-            shift_out_str = "00:00 AM"
-        else:
-            shift_out_str = row[2].strip()
+        
+        # Handle missing or invalid times
+        if shift_out_str == "missing" or shift_out_str == "00:00 AM":
+            shift_out_str = "12:00 AM"
+        if shift_in_str == "00:00 AM":
+            shift_in_str = "12:00 AM"
 
-        shift_in_dt = datetime.strptime(shift_in_str, "%I:%M %p")
-        print(shift_in_dt)
-        shift_out_dt = datetime.strptime(shift_out_str, "%I:%M %p")
-        print(shift_out_dt)
+        try:
+            shift_in_dt = datetime.strptime(shift_in_str, "%I:%M %p")
+            shift_out_dt = datetime.strptime(shift_out_str, "%I:%M %p")
+        except ValueError as e:
+            print(f"Invalid time format: {shift_in_str} or {shift_out_str}")
+            return
 
         # Calculate total hours worked (as float)
         hours_worked = round((shift_out_dt - shift_in_dt).total_seconds() / 3600, 2)
@@ -93,9 +97,16 @@ def parse_row_and_insert_from_openclock(conn, user_name, row):
         # Get user ID from username
         cursor = conn.cursor()
         cursor.execute('SELECT id FROM users WHERE username = ?', (user_name,))
-        user_id = cursor.fetchone()[0]
-        find_same_time_and_date = cursor.execute('SELECT * FROM hours_entries_openclock WHERE user_id = (?) AND entry_date = (?) AND shift_in = (?) AND shift_out = (?)', (user_id, entry_date, shift_in_dt.strftime("%H:%M:%S"), shift_out_dt.strftime("%H:%M:%S")))
-        if find_same_time_and_date:
+        user_result = cursor.fetchone()
+        if not user_result:
+            print(f"User {user_name} not found")
+            return
+        user_id = user_result[0]
+
+        # Check for duplicate entries
+        find_same_time_and_date = cursor.execute('SELECT * FROM hours_entries_openclock WHERE user_id = (?) AND entry_date = (?) AND shift_in = (?) AND shift_out = (?)', 
+            (user_id, entry_date, shift_in_dt.strftime("%H:%M:%S"), shift_out_dt.strftime("%H:%M:%S")))
+        if find_same_time_and_date.fetchone():
             print("Same time and date already exists")
             return
 
@@ -109,7 +120,7 @@ def parse_row_and_insert_from_openclock(conn, user_name, row):
             shift_in_dt.strftime("%H:%M:%S"),
             shift_out_dt.strftime("%H:%M:%S"),
             hours_worked,
-            row[-1].strip()
+            row[-1].strip() if row[-1] else 'No notes'
         ))
 
         conn.commit()
