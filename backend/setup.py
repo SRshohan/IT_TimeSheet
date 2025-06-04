@@ -46,7 +46,6 @@ def convert_to_date(date):
     except ValueError:
         return (date, False)
 
-
 # This function is used to enter the hours into the Each Day time sheet
 def convert_time_24_to_12_format(time_str):
     """Converts '18:00:00' to ('06:00', 'PM')"""
@@ -99,10 +98,31 @@ def enter_all_hours(driver, shifts):
         print("Error in enter_all_hours:", e)
         return False
 
+# This function is used to go to the next and previous page of the time sheet
+def nextAndPrevious(driver):
+    try:
+        next_button = driver.find_element(By.XPATH, "/html/body/div[3]/table[1]/tbody/tr[5]/td/form/table[2]/tbody/tr/td[6]/input")
+        value = next_button.get_attribute("value")
+        print(value)
+        next_button.click()
+        return value
+    except Exception as e:
+        print("Error at Next and Previous:", e)
+        return None
 
 def time_entries_each_day_to_time_sheet(driver):
     date_list = []
     try:
+        # Get the selected period from session state
+        selected_period = st.session_state.time_periods[st.session_state.dropdown_options.index(st.session_state.time_period_select)]
+        selected_start_date = selected_period['start_date']
+        selected_end_date = selected_period['end_date']
+        
+        print(f"Processing time entries for period: {selected_start_date.strftime('%Y-%m-%d')} to {selected_end_date.strftime('%Y-%m-%d')}")
+        
+        # Create a new database connection for this thread
+        db = database_setup()
+        
         while True:  # Keep looping until we reach the last page
             wait = WebDriverWait(driver, 10)
 
@@ -122,52 +142,52 @@ def time_entries_each_day_to_time_sheet(driver):
                 date, is_date = convert_to_date(text)
 
                 if is_date:
-                    print("Date found:", date)
-                    date_list.append((date, index))
-                    print("date_list", date_list)
-
-                    print("Started to query the database for the date:", date, "Type of date:", type(date))
+                    # Convert string date to datetime for comparison
+                    current_date = datetime.strptime(date, "%Y-%m-%d")
                     
-                    # First check if we have any time entries for this date
-                    time_entry = query_hours_entries_openclock(db, username, date)
-                    print("time_entry", time_entry)
-                    
-                    if not time_entry or len(time_entry) == 0:
-                        print("No Time entry found for this date, skipping...")
-                        continue
-
-                    # Process the time entries and create shifts list
-                    shifts = []
-                    print("Processing time entries")
-                    for entry in time_entry:
-                        if entry[5] == 0:
-                            print("Time difference is less than 15 minutes, skipping...")
+                    # Only process dates within the selected period
+                    if selected_start_date <= current_date <= selected_end_date:
+                        print(f"Processing date within selected period: {date}")
+                        date_list.append((date, index))
+                        
+                        # Query the database for this date
+                        time_entry = query_hours_entries_openclock(db, username, date)
+                        print(f"Time entries for {date}: {time_entry}")
+                        
+                        if not time_entry or len(time_entry) == 0:
+                            print(f"No time entries found for {date}, skipping...")
                             continue
-                        else:
-                            shifts.append((entry[3], entry[4]))
-                            print("shifts", (entry[3], entry[4]))
-                    
-                    print("Final shifts list:", shifts)
-                    
-                    # Only proceed with navigation if we have valid shifts
-                    if shifts and len(shifts) > 0:
-                        print("Valid shifts found, navigating to Enter Hours page...")
-                        if action_cells[index].text == "Enter Hours":
-                            enter_hours_link = action_cells[index].find_element(By.PARTIAL_LINK_TEXT, "Enter Hours")
-                            enter_hours_link.click()
-                            
-                            # Wait for the new page to load
-                            wait.until(EC.presence_of_element_located((By.XPATH, "/html/body/div[3]/form/table[2]/tbody/tr[2]/td[2]/input")))
-                            
-                            print("Entering hours in the time sheet")
-                            result = enter_all_hours(driver, shifts)
-                            print("result", result)
-                        else:
-                            print("Action cell text:", action_cells[index].text)
-                    else:
-                        print("No valid shifts found for this date")
 
-            # Use the existing nextAndPrevious function to handle page navigation
+                        # Process the time entries and create shifts list
+                        shifts = []
+                        for entry in time_entry:
+                            if entry[5] <= 0:
+                                print(f"Time difference is less than 15 minutes for {date}, skipping...")
+                                continue
+                            else:
+                                shifts.append((entry[3], entry[4]))
+                                print(f"Added shift for {date}: {entry[3]} to {entry[4]}")
+                        
+                        if shifts and len(shifts) > 0:
+                            print(f"Processing {len(shifts)} shifts for {date}")
+                            if action_cells[index].text == "Enter Hours":
+                                enter_hours_link = action_cells[index].find_element(By.PARTIAL_LINK_TEXT, "Enter Hours")
+                                enter_hours_link.click()
+                                
+                                # Wait for the new page to load
+                                wait.until(EC.presence_of_element_located((By.XPATH, "/html/body/div[3]/form/table[2]/tbody/tr[2]/td[2]/input")))
+                                
+                                print(f"Entering hours for {date}")
+                                result = enter_all_hours(driver, shifts)
+                                print(f"Result for {date}: {result}")
+                            else:
+                                print(f"Action cell text for {date}: {action_cells[index].text}")
+                        else:
+                            print(f"No valid shifts found for {date}")
+                    else:
+                        print(f"Skipping date {date} as it's outside the selected period")
+
+            # Use the nextAndPrevious function for navigation
             button_text = nextAndPrevious(driver)
             if button_text == "Previous":
                 print("Reached the last page, stopping...")
@@ -177,47 +197,17 @@ def time_entries_each_day_to_time_sheet(driver):
                 # Wait for the new page to load
                 wait.until(EC.presence_of_element_located((By.XPATH, "/html/body/div[3]/table[1]/tbody/tr[5]/td")))
 
-        print("Check the date_list", date_list)
+        print("Final date list:", date_list)
         return date_list, True
 
     except Exception as e:
-        print("Error:", e)
+        print("Error in time_entries_each_day_to_time_sheet:", e)
         return [], False
+    finally:
+        # Close the database connection
+        if 'db' in locals():
+            db.close()
 
-
-
-# This function is used to go to the next and previous page of the time sheet
-def nextAndPrevious(driver):
-    try:
-        next_button = driver.find_element(By.XPATH, "/html/body/div[3]/table[1]/tbody/tr[5]/td/form/table[2]/tbody/tr/td[6]/input")
-        value = next_button.get_attribute("value")
-        print(value)
-        next_button.click()
-        return value
-    except Exception as e:
-        print("Error:", e)
-   
-
-# This function is used to select a period from the terminal
-def select_period_from_terminal(structured_data):
-    """
-    Presents the structured_data as lettered options in the terminal, prompts the user for a letter,
-    and returns the selected period dictionary. Returns None if the selection is invalid.
-    """
-    print("Select a time period:")
-    for idx, period in enumerate(structured_data):
-        letter = string.ascii_uppercase[idx]
-        print(f"{letter}) {period['start_date'].strftime('%b %d, %Y')} to {period['end_date'].strftime('%b %d, %Y')} - {period['status']}")
-
-    choice = "A"
-    try:
-        selected_idx = string.ascii_uppercase.index(choice)
-        selected_period = structured_data[selected_idx]
-        print("You selected:", selected_period)
-        return selected_period
-    except (ValueError, IndexError):
-        print("Invalid selection.")
-        return None
 
 # This function is used to parse the line of the time period
 def parse_line(line):
@@ -323,7 +313,7 @@ def login_to_self_service(driver, username, password):
         select_time_period = driver.find_element(By.XPATH, '//*[@id="period_1_id"]')
         raw_data = select_time_period.text.split('\n')
         
-        # Parse periods
+        # Parse periods from the self-service website
         structured_data = []
         for line in raw_data:
             if line.strip():
@@ -337,39 +327,10 @@ def login_to_self_service(driver, username, password):
             st.error("No available time periods found")
             return None
         
-        # Create dropdown options with status indicators
-        dropdown_options = []
-        for p in structured_data:
-            status_indicator = "✅" if p['status'].lower() == 'completed' else "⏳"
-            dropdown_options.append(
-                f"{status_indicator} {p['start_date'].strftime('%b %d, %Y')} to {p['end_date'].strftime('%b %d, %Y')} - {p['status']}"
-            )
-        
-        # Store the periods in session state if not already there
-        if 'time_periods' not in st.session_state:
-            st.session_state.time_periods = structured_data
-            st.session_state.dropdown_options = dropdown_options
-        
-        # Show dropdown in Streamlit
-        selected_option = st.selectbox(
-            "Select Time Period",
-            options=st.session_state.dropdown_options,
-            key='time_period_select'
-        )
-        
-        # Get the selected period
-        selected_index = st.session_state.dropdown_options.index(selected_option)
-        selected_period = st.session_state.time_periods[selected_index]
-        
-        # Check if the selected period is completed
-        if selected_period['status'].lower() == 'completed':
-            st.warning("This time period is already completed. Please select a different period.")
-            return None
-        
         # Store the driver in session state for use in extract_time_from_self_service_and_select_period
         st.session_state.driver = driver
         
-        return selected_period
+        return structured_data
             
     except Exception as e:
         st.error(f"Error during login: {str(e)}")
@@ -382,32 +343,81 @@ def extract_time_from_self_service_and_select_period(driver):
         return None
         
     driver = st.session_state.driver
-    selected_period = st.session_state.time_periods[st.session_state.dropdown_options.index(st.session_state.time_period_select)]
     
-    if selected_period is not None:
-        try:
-            # Select the period in the browser
-            select = Select(driver.find_element(By.ID, "period_1_id"))
-            select.select_by_index(st.session_state.dropdown_options.index(st.session_state.time_period_select) + 1)
-            print("Selected in browser:", selected_period)
-            time.sleep(5)
-            
-            # Submit the selection
-            submit_time_selection = driver.find_element(By.XPATH, '/html/body/div[3]/form/table[2]/tbody/tr/td/input')
-            print("Submit Time Selection:", submit_time_selection.text)
-            submit_time_selection.click()
-            time.sleep(3)
-            
-            
-            _, desired_date_found = time_entries_each_day_to_time_sheet(driver)
-            print("Desired date found:", desired_date_found)
-            
-            return st.session_state.time_periods
-        except Exception as e:
-            st.error(f"Error during time period selection: {str(e)}")
+    try:
+        # Create dropdown options with status indicators for Streamlit UI
+        dropdown_options = []
+        for p in st.session_state.time_periods:
+            status_indicator = "✅" if p['status'].lower() == 'completed' else "⏳"
+            dropdown_options.append(
+                f"{status_indicator} {p['start_date'].strftime('%b %d, %Y')} to {p['end_date'].strftime('%b %d, %Y')} - {p['status']}"
+            )
+        
+        # Store dropdown options in session state
+        st.session_state.dropdown_options = dropdown_options
+        
+        # Show dropdown in Streamlit
+        selected_option = st.selectbox(
+            "Select Time Period",
+            options=dropdown_options,
+            key='time_period_select'
+        )
+        
+        # Get the selected period
+        selected_index = dropdown_options.index(selected_option)
+        selected_period = st.session_state.time_periods[selected_index]
+        
+        # Wait for the dropdown to be present
+        wait = WebDriverWait(driver, 10)
+        dropdown = wait.until(EC.presence_of_element_located((By.ID, "period_1_id")))
+        select = Select(dropdown)
+        
+        # Get all options from the self-service dropdown
+        available_periods = []
+        for option in select.options:
+            if option.text.strip():
+                try:
+                    period = parse_line(option.text)
+                    available_periods.append((option.text, period))
+                except ValueError:
+                    continue
+        
+        # Find the matching period in the self-service dropdown
+        matching_option = None
+        for option_text, period in available_periods:
+            if (period['start_date'] == selected_period['start_date'] and 
+                period['end_date'] == selected_period['end_date'] and 
+                period['status'] == selected_period['status']):
+                matching_option = option_text
+                break
+        
+        if matching_option is None:
+            st.error("Could not find matching period in self-service dropdown")
             return None
-    else:
-        print("No valid selection made.")
+        
+        # Select the period in the self-service dropdown using the exact text from the dropdown
+        select.select_by_visible_text(matching_option)
+        print(f"Selected period in self-service: {matching_option}")
+        time.sleep(2)
+        
+        # Click the time sheet button
+        time_sheet_button = wait.until(EC.element_to_be_clickable((By.XPATH, '/html/body/div[3]/form/table[2]/tbody/tr/td/input')))
+        time_sheet_button.click()
+        print("Clicked time sheet button")
+        time.sleep(2)
+        
+        # Process time entries - this will handle all navigation internally
+        date_list, success = time_entries_each_day_to_time_sheet(driver)
+        if success:
+            st.success("Time entries processed successfully!")
+        else:
+            st.warning("No time entries found or processed.")
+        
+        print("Time period selection and processing completed")
+        return True
+        
+    except Exception as e:
+        st.error(f"Error during time period selection: {str(e)}")
         return None
 
 
