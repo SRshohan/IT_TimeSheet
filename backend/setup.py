@@ -47,9 +47,11 @@ def convert_to_date(date):
         return (date, False)
 
 
-# This function is used to enter the hours into the Each Day time sheet
-def convert_time_24_to_12_format(time_str):
-    """Converts '18:00:00' to ('06:00', 'PM')"""
+# This function is used to convert a 24-hour time string
+# to its 12-hour components. Renamed to avoid clashing with
+# the earlier helper returning a string.
+def convert_time_24_to_12_parts(time_str):
+    """Converts '18:00:00' to ('06:00', 'PM')."""
     time_obj = datetime.strptime(time_str, "%H:%M:%S")
     return time_obj.strftime("%I:%M"), time_obj.strftime("%p")
 
@@ -63,8 +65,8 @@ def enter_all_hours(driver, shifts):
             row_index = i + 2  # since HTML rows start at 2nd tr (1-based index)
             
             # Convert time
-            start_time, clck_in_am_pm = convert_time_24_to_12_format(start_time_24)
-            end_time, clck_out_am_pm = convert_time_24_to_12_format(end_time_24)
+            start_time, clck_in_am_pm = convert_time_24_to_12_parts(start_time_24)
+            end_time, clck_out_am_pm = convert_time_24_to_12_parts(end_time_24)
 
             # Time In
             timein_input_xpath = f'/html/body/div[3]/form/table[2]/tbody/tr[{row_index}]/td[2]/input'
