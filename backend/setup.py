@@ -13,6 +13,7 @@ import re
 import string
 from organizeData import query_hours_entries_openclock, database_setup
 import streamlit as st
+from organizeData import insert_gcal_data
 
 load_dotenv()
 
@@ -142,13 +143,14 @@ def time_entries_each_day_to_time_sheet(driver):
                 date, is_date = convert_to_date(text)
 
                 if is_date:
-                    # Convert string date to datetime for comparison
-                    current_date = datetime.strptime(date, "%Y-%m-%d")
+                        # Convert string date to datetime for comparison
+                        current_date = datetime.strptime(date, "%Y-%m-%d")
+                        
+                        # Only process dates within the selected period
                     
-                    # Only process dates within the selected period
-                    if selected_start_date <= current_date <= selected_end_date:
-                        print(f"Processing date within selected period: {date}")
                         date_list.append((date, index))
+
+                        insert_gcal_data(db, username, current_date)
                         
                         # Query the database for this date
                         time_entry = query_hours_entries_openclock(db, username, date)
@@ -161,7 +163,10 @@ def time_entries_each_day_to_time_sheet(driver):
                         # Process the time entries and create shifts list
                         shifts = []
                         for entry in time_entry:
-                            if entry[5] <= 0:
+                            if isinstance(entry[5], str):
+                                shifts.append((entry[3], entry[4]))
+                                print(f"Added GCal shift for {date}")
+                            elif entry[5] <= 0:
                                 print(f"Time difference is less than 15 minutes for {date}, skipping...")
                                 continue
                             else:
@@ -184,8 +189,7 @@ def time_entries_each_day_to_time_sheet(driver):
                                 print(f"Action cell text for {date}: {action_cells[index].text}")
                         else:
                             print(f"No valid shifts found for {date}")
-                    else:
-                        print(f"Skipping date {date} as it's outside the selected period")
+                    
 
             # Use the nextAndPrevious function for navigation
             button_text = nextAndPrevious(driver)
@@ -428,7 +432,6 @@ if __name__ == "__main__":
     selected_period = extract_time_from_self_service_and_select_period(driver)
     print(selected_period)
     
-
 
 
 
