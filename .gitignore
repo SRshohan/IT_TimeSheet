@@ -4,3 +4,5 @@ chromedriver-mac-arm64/
 __pycache__/
 test.ipynb
 backend/chrome_profile_*/
+backend/token.json
+backend/credentials.json
