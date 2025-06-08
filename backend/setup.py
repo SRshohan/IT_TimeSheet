@@ -10,7 +10,6 @@ from selenium.webdriver.support import expected_conditions as EC
 from dotenv import load_dotenv
 from datetime import datetime, timedelta
 import re
-import string
 from organizeData import query_hours_entries_openclock, database_setup
 import streamlit as st
 from organizeData import insert_gcal_data
@@ -105,7 +104,11 @@ def nextAndPrevious(driver):
         next_button = driver.find_element(By.XPATH, "/html/body/div[3]/table[1]/tbody/tr[5]/td/form/table[2]/tbody/tr/td[6]/input")
         value = next_button.get_attribute("value")
         print(value)
-        next_button.click()
+        if value == "Next":
+            next_button.click()
+        else:
+            print("No next button found")
+            return None
         return value
     except Exception as e:
         print("Error at Next and Previous:", e)
@@ -205,7 +208,7 @@ def time_entries_each_day_to_time_sheet(driver):
         return date_list, True
 
     except Exception as e:
-        print("Error in time_entries_each_day_to_time_sheet:", e)
+        print("Error in time_entries_each_day_to_time_sheet:", e, date_list)
         return [], False
     finally:
         # Close the database connection
