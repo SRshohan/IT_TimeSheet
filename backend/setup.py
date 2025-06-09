@@ -106,9 +106,6 @@ def nextAndPrevious(driver):
         print(value)
         if value == "Next":
             next_button.click()
-        else:
-            print("No next button found")
-            return None
         return value
     except Exception as e:
         print("Error at Next and Previous:", e)
@@ -153,10 +150,10 @@ def time_entries_each_day_to_time_sheet(driver):
                     
                         date_list.append((date, index))
 
-                        insert_gcal_data(db, username, current_date)
+                        time_entry = insert_gcal_data(db, username, current_date)
                         
                         # Query the database for this date
-                        time_entry = query_hours_entries_openclock(db, username, date)
+                        # time_entry = query_hours_entries_openclock(db, username, date)
                         print(f"Time entries for {date}: {time_entry}")
                         
                         if not time_entry or len(time_entry) == 0:
