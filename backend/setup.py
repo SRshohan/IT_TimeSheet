@@ -89,24 +89,30 @@ def enter_all_hours(driver, shifts):
         )))
         save_button.click()
 
-
-        print("CLicking on back button ...")
-        # Back button - with wait and refresh
+        # Wait for the page to update after save
+        wait.until(EC.staleness_of(save_button))
+        
+        # Wait for the back button to be present and clickable
+        print("Waiting for back button...")
         back_button = wait.until(EC.element_to_be_clickable((
             By.XPATH,
             "/html/body/div[3]/form/table[3]/tbody/tr[1]/td/input[1]"
         )))
+        print("Clicking back button...")
         back_button.click()
 
-        # Wait for main table
-        wait.until(EC.presence_of_element_located((By.XPATH,
-            "/html/body/div[3]/table[1]/tbody/tr[5]/td"
-        )))
+       
 
         return True
 
     except Exception as e:
         print("Error in enter_all_hours:", e)
+        # Take a screenshot for debugging
+        try:
+            driver.save_screenshot("error_screenshot.png")
+            print("Saved error screenshot to error_screenshot.png")
+        except:
+            print("Could not save error screenshot")
         return False
 
 
@@ -188,6 +194,11 @@ def time_entries_each_day_to_time_sheet(driver):
                     is_success = enter_all_hours(driver, shifts)
                     if is_success:
                         print("Hours entered successfully")
+                         # Wait for the main table to be present again
+                        print("Waiting for main table...")
+                        wait.until(EC.presence_of_element_located((By.XPATH,
+                            "/html/body/div[3]/table[1]/tbody/tr[5]/td"
+                        )))
                     else:
                         print("Error entering hours")
 
