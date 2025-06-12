@@ -1,5 +1,7 @@
+#!/usr/bin/env python3
 # app.py
-import streamlit as st
+import argparse
+from datetime import datetime, timedelta
 from organizeData import (
     database_setup,
     parse_row_and_insert_from_openclock,
@@ -14,143 +16,81 @@ from setup import (
 )
 from extract_time import select_range_dates, is_data_up_to_date
 
-from datetime import datetime, timedelta
-import time
-from selenium.webdriver.support.select import Select
-from selenium.webdriver.common.by import By
+def extract_openclock_data(username, password, start_date, end_date):
+    """Extract data from OpenClock for the given date range."""
+    try:
+        db = database_setup()
+        create_db()
 
-# ─── Streamlit UI ──────────────────────────────────────────────────────────────
+        # ensure user exists
+        cur = db.cursor()
+        cur.execute("SELECT id FROM users WHERE username = ?", (username,))
+        if not cur.fetchone():
+            insert_user(db, username, username, password)
 
-st.title("Time Sheet Automation")
+        res = select_range_dates(username, password, start_date, end_date)
+        if res["data"]:
+            for row in res["data"]:
+                parse_row_and_insert_from_openclock(db, username, row)
+            print(f"✅ Stored data from {res['start_date']} to {res['end_date']}")
+        else:
+            print("⚠️ No OpenClock data for that range.")
+    except Exception as e:
+        print(f"❌ Error: {e}")
+    finally:
+        db.close()
 
-# Sidebar for credentials
-with st.sidebar:
-    st.header("Configuration")
-    st.subheader("Username")
-    username = st.text_input(
-        "Username", value=st.session_state.get("username", "")
-    )
-    st.subheader("OpenClock Password")
-    openclock_password = st.text_input(
-        "OpenClock Password",
-        type="password",
-        value=st.session_state.get("openclock_password", "")
-    )
-    st.subheader("Self-Service Password")
-    selfservice_password = st.text_input(
-        "Self-Service Password",
-        type="password",
-        value=st.session_state.get("selfservice_password", "")
-    )
-
-    # Remember in session
-    if username:
-        st.session_state.username = username
-    if openclock_password:
-        st.session_state.openclock_password = openclock_password
-    if selfservice_password:
-        st.session_state.selfservice_password = selfservice_password
-
-# Main pane: Data Extraction
-st.header("Data Extraction")
-
-col1, col2 = st.columns(2)
-with col1:
-    start_date = st.date_input(
-        "Start Date", value=datetime.now() - timedelta(days=30)
-    )
-with col2:
-    end_date = st.date_input("End Date", value=datetime.now())
-
-start_str = start_date.strftime("%m/%d/%Y")
-end_str   = end_date.strftime("%m/%d/%Y")
-
-if st.button("Extract Data from OpenClock"):
-    if not username or not openclock_password:
-        st.error("Enter username & OpenClock password above.")
-    else:
-        with st.spinner("Fetching OpenClock data…"):
+def enter_timesheet(username, password):
+    """Enter time sheet data into Self-Service."""
+    try:
+        driver = setup_driver()
+        result = extract_time_from_self_service_and_select_period(
+            driver, username, password
+        )
+        if result:
+            print("✅ Time entries processed!")
+        else:
+            print("❌ Failed to process time entries.")
+    except Exception as e:
+        print(f"❌ Error: {e}")
+    finally:
+        if driver:
             try:
-                db = database_setup()
-                create_db()
+                driver.quit()
+            except:
+                pass
 
-                # ensure user exists
-                cur = db.cursor()
-                cur.execute(
-                    "SELECT id FROM users WHERE username = ?", (username,)
-                )
-                if not cur.fetchone():
-                    insert_user(db, username, username, openclock_password)
+def main():
+    parser = argparse.ArgumentParser(description="Time Sheet Automation Tool")
+    parser.add_argument("--username", required=True, help="Your username")
+    parser.add_argument("--openclock-password", required=True, help="OpenClock password")
+    parser.add_argument("--selfservice-password", required=True, help="Self-Service password")
+    parser.add_argument("--start-date", help="Start date (MM/DD/YYYY)", 
+                       default=(datetime.now() - timedelta(days=30)).strftime("%m/%d/%Y"))
+    parser.add_argument("--end-date", help="End date (MM/DD/YYYY)",
+                       default=datetime.now().strftime("%m/%d/%Y"))
+    parser.add_argument("--action", choices=["extract", "enter", "both"], required=True,
+                       help="Action to perform: extract data, enter timesheet, or both")
 
-                res = select_range_dates(
-                    username, openclock_password, start_str, end_str
-                )
-                if res["data"]:
-                    for row in res["data"]:
-                        parse_row_and_insert_from_openclock(db, username, row)
-                    st.success(f"Stored data from {res['start_date']} to {res['end_date']}")
-                else:
-                    st.warning("No OpenClock data for that range.")
-            except Exception as e:
-                st.error(f"Error: {e}")
+    args = parser.parse_args()
 
-# Self-Service Time Sheet Entry
-st.header("Self-Service Time Sheet Entry")
+    if args.action in ["extract", "both"]:
+        print("📊 Extracting OpenClock data...")
+        extract_openclock_data(args.username, args.openclock_password, 
+                             args.start_date, args.end_date)
 
-# Keep one driver alive
-if "driver" not in st.session_state:
-    st.session_state.driver = None
+    if args.action in ["enter", "both"]:
+        print("📝 Entering time sheet data...")
+        enter_timesheet(args.username, args.selfservice_password)
 
-if st.button("Close Browser"):
-    if st.session_state.driver:
-        try:
-            st.session_state.driver.quit()
-            st.session_state.driver = None
-            st.success("Browser closed.")
-        except Exception as e:
-            st.error(f"Error closing browser: {e}")
-
-if st.button("Enter Time Sheet"):
-    if not username or not selfservice_password:
-        st.error("Enter username & Self-Service password above.")
+    # Check data status
+    if is_data_up_to_date():
+        print("✅ Your data is up to date")
     else:
-        with st.spinner("Processing…"):
-            try:
-                drv = st.session_state.driver
-                # init or refresh driver
-                if drv is None:
-                    drv = setup_driver()
-                else:
-                    try:
-                        drv.current_url
-                    except:
-                        drv.quit()
-                        drv = setup_driver()
-                st.session_state.driver = drv
+        print("⚠️ Your data needs to be updated")
 
-                # Kick off the flow
-                result = extract_time_from_self_service_and_select_period(
-                    drv, username, selfservice_password
-                )
-                if result:
-                    st.success("Time entries processed!")
-                else:
-                    st.error("Failed to process time entries.")
-            except Exception as e:
-                st.error(f"Error: {e}")
-                if st.session_state.driver:
-                    try:
-                        st.session_state.driver.quit()
-                    except:
-                        pass
-                    st.session_state.driver = None
-
-# Data status
-st.header("Data Status")
-if is_data_up_to_date():
-    st.success("✅ Your data is up to date")
-else:
-    st.warning("⚠️ Your data needs to be updated")
+if __name__ == "__main__":
+    main()
 
 
 

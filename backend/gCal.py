@@ -42,7 +42,10 @@ def fetch_events_for_day(service, calendar_id, specific_date):
 
     events = events_result.get('items', [])
     result = {}
-
+    if not events:
+        return None
+    
+    
     for event in events:
         summary = event.get('summary', 'No Title')
 
@@ -89,34 +92,13 @@ def main():
 
     # Set the date you want to search (YYYY, MM, DD)
     specific_date = datetime(2025, 6, 5)
+    print(specific_date, type(specific_date))
 
     service = get_calendar_service()
     events = fetch_events_for_day(service, calendar_id, specific_date)
 
-    if not events:
-        print("No events found.")
-        return
+    print("Events: ",events)
 
-    for event in events:
-        summary = event.get('summary', 'No Title')
-        if summary == "Sohanur Rahman":
-            start = event['start'].get('dateTime', event['start'].get('date'))
-            end = event['end'].get('dateTime', event['end'].get('date'))
-
-            # Try to calculate duration
-            try:
-                start_dt = datetime.fromisoformat(start)
-                end_dt = datetime.fromisoformat(end)
-                duration = end_dt - start_dt
-            except:
-                duration = 'All day'
-
-            print(f"\nEvent: {summary}")
-            print(f"Start: {start}")
-            print(f"End:   {end}")
-            print(f"Duration: {duration}")
-        else:
-            print(f"Event: {summary}, Skipping...")
 
 if __name__ == '__main__':
     main()
