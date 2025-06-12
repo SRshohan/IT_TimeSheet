@@ -9,6 +9,9 @@ from selenium.webdriver.common.keys import Keys
 from dotenv import load_dotenv
 from datetime import datetime, timedelta
 import sqlite3
+from datetime import datetime
+from dateutil.relativedelta import relativedelta  # external library
+
 
 load_dotenv()
 
@@ -82,7 +85,7 @@ def select_range_dates(username, password, start_date=None, end_date=None):
 
     service = Service(path)
     options = Options()
-    options.add_argument("--headless=new")  # Run in headless mode for automation
+    # options.add_argument("--headless=new")  # Run in headless mode for automation
     options.add_argument("--disable-gpu")
     options.add_argument("--no-sandbox")
     options.add_argument("--disable-dev-shm-usage")
@@ -137,6 +140,26 @@ def select_range_dates(username, password, start_date=None, end_date=None):
 # Usage:
 # data_dict = select_range_dates("05/27/2025", "05/31/2025")
 # print(data_dict)
+
+
+if __name__ == "__main__":
+    # Step 1: Get today's date
+    today = datetime.today()
+
+    # Step 2: Go one month back
+    one_month_back = today - relativedelta(months=1)
+
+    end_date = today.strftime("%m/%d/%Y")
+    # Step 3: Format as MM/DD/YYYY
+    start_date = one_month_back.strftime("%m/%d/%Y")
+
+    print(end_date, type(end_date))
+
+    username = "srahman06"
+    password = "sohanur"
+    data_dict = select_range_dates(username, password, start_date, end_date)
+    print(data_dict)      
+
 
 
 

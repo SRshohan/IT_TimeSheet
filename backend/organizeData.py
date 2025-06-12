@@ -20,6 +20,7 @@ def convert_decimal_to_hms(decimal_hours):
 
 
 def database_setup():
+    create_db()
     conn = sqlite3.connect("app.db")
     return conn
 
@@ -52,17 +53,6 @@ def create_db():
             FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
         );
         ''')
-
-    cursor.execute(''' 
-        CREATE TABLE IF NOT EXISTS time_entry_eachday_self_service_status (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            user_id INTEGER NOT NULL,
-            start_date DATE NOT NULL,
-            end_date DATE NOT NULL,
-            status TEXT NOT NULL DEFAULT 'No',
-            FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
-            );
-        ''')
     
 
     conn.commit()
@@ -78,7 +68,34 @@ def insert_user(conn, first_name, username, password):
         ''', (first_name, username, password))
     conn.commit()
 
-def insert_gcal_data(conn, user_name, date):
+
+
+def gcal_get_data(conn, user_name, date): # Ex: date : "2025-06-05"
+    cursor = conn.cursor()
+    cursor.execute('SELECT id FROM users WHERE username = ?', (user_name,))
+    user = cursor.fetchone()
+    if not user:
+        print("User not found")
+        return
+    user_id = user[0]
+
+    note = "GCal"
+     # Check for existing entry with same user and date
+    cursor.execute('''
+        SELECT * FROM hours_entries_openclock 
+        WHERE user_id = ? AND entry_date = ? AND notes = ?
+    ''', (user_id, date, note))
+    
+    existing_entry = cursor.fetchone()
+
+    if not existing_entry:
+        return None
+
+    return existing_entry
+
+
+
+def insert_gcal_data(conn, user_name, date): # Ex: date : "2025-06-05"
     cursor = conn.cursor()
     cursor.execute('SELECT id FROM users WHERE username = ?', (user_name,))
     user = cursor.fetchone()
@@ -89,8 +106,13 @@ def insert_gcal_data(conn, user_name, date):
 
     # Get event data from Google Calendar
     try:
+        raw_date = datetime.strptime(date, "%Y-%m-%d")
+        
         service = get_calendar_service()
-        event = fetch_events_for_day(service, calendar_id, date)
+        event = fetch_events_for_day(service, calendar_id, raw_date)
+        print(event)
+        if event is None:
+            return 
         entry_date = event["date"]
         shift_in = event["start_time"]
         shift_out = event["end_time"]
@@ -99,40 +121,27 @@ def insert_gcal_data(conn, user_name, date):
         print("Error fetching event data:", e)
         return
 
-    # Check for existing entry with same user and date
+    # Perform insert
     cursor.execute('''
-        SELECT id, shift_out FROM hours_entries_openclock 
-        WHERE user_id = ? AND entry_date = ?
-    ''', (user_id, entry_date))
-    existing_entry = cursor.fetchone()
+        INSERT INTO hours_entries_openclock (user_id, entry_date, shift_in, shift_out, hours_worked, notes)
+        VALUES (?, ?, ?, ?, ?, ?)
+    ''', (user_id, entry_date, shift_in, shift_out, hours_worked, "GCal"))
 
-    if existing_entry:
-        existing_id, existing_shift_out = existing_entry
+    
+    print(f"Inserted new entry for {entry_date}")
 
-        # Check if shift_out is '00:00:00'
-        if existing_shift_out == '00:00:00':
-            # Perform update
-            cursor.execute('''
-                UPDATE hours_entries_openclock
-                SET shift_in = ?, shift_out = ?, hours_worked = ?, notes = ?
-                WHERE id = ?
-            ''', (shift_in, shift_out, hours_worked, "GCal", existing_id))
-            print(f"Updated entry on {entry_date}")
-        else:
-            print(f"Entry for {entry_date} already exists and has shift_out = {existing_shift_out}, no update needed.")
-    else:
-        # Perform insert
-        cursor.execute('''
-            INSERT INTO hours_entries_openclock (user_id, entry_date, shift_in, shift_out, hours_worked, notes)
-            VALUES (?, ?, ?, ?, ?, ?)
-        ''', (user_id, entry_date, shift_in, shift_out, hours_worked, "GCal"))
-        print(f"Inserted new entry for {entry_date}")
+    data = gcal_get_data(conn, user_name, date)
+
 
     conn.commit()
+
     print("Inserted:", entry_date, shift_in, shift_out, hours_worked)
 
+    return data
 
-def parse_row_and_insert_from_openclock(conn, user_name, row):
+
+
+def parse_row_and_insert_from_openclock(conn, user_name, row): # ROW Ex: 
     if len(row) < 6:
         print("Row incomplete:", row)
         return
@@ -141,51 +150,31 @@ def parse_row_and_insert_from_openclock(conn, user_name, row):
         # Convert '01/02, Thu' to 'YYYY-MM-DD'
         raw_date = row[0].split(',')[0].strip()  # '01/02'
         year = datetime.now().year
-        
         entry_date = datetime.strptime(f"{year}/{raw_date}", "%Y/%m/%d").date()
+        print("Parse Row And Insert From Openclock", entry_date)
 
         # Convert shift_in and shift_out to datetime objects
         shift_in_str = row[1].strip()
         shift_out_str = row[2].strip()
-        
-        # Handle missing or invalid times
-        if shift_out_str == "missing" or shift_out_str == "00:00 AM":
-            shift_out_str = "12:00 AM"
-        if shift_in_str == "00:00 AM":
-            shift_in_str = "12:00 AM"
+        if shift_out_str == "missing":
+            shift_out_str = "00:00 AM"
+        else:
+            shift_out_str = row[2].strip()
 
-        try:
-            shift_in_dt = datetime.strptime(shift_in_str, "%I:%M %p")
-            shift_out_dt = datetime.strptime(shift_out_str, "%I:%M %p")
-        except ValueError as e:
-            print(f"Invalid time format: {shift_in_str} or {shift_out_str}")
-            return
+        shift_in_dt = datetime.strptime(shift_in_str, "%I:%M %p")
+        print(shift_in_dt)
+        shift_out_dt = datetime.strptime(shift_out_str, "%I:%M %p")
+        print(shift_out_dt)
 
         # Calculate total hours worked (as float)
         hours_worked = round((shift_out_dt - shift_in_dt).total_seconds() / 3600, 2)
 
-        if hours_worked <= 0:
-            date = datetime.strptime(f"{year}/{raw_date}", "%Y/%m/%d")
-            date = date.strftime("%Y-%m-%d")
-            date = datetime.strptime(date, "%Y-%m-%d")
-            print("Inserting GCal data for", date, type(date))
-            insert_gcal_data(conn, user_name, date)
-            return
-        
-
         # Get user ID from username
         cursor = conn.cursor()
         cursor.execute('SELECT id FROM users WHERE username = ?', (user_name,))
-        user_result = cursor.fetchone()
-        if not user_result:
-            print(f"User {user_name} not found")
-            return
-        user_id = user_result[0]
-
-        # Check for duplicate entries
-        find_same_time_and_date = cursor.execute('SELECT * FROM hours_entries_openclock WHERE user_id = (?) AND entry_date = (?) AND shift_in = (?) AND shift_out = (?)', 
-            (user_id, entry_date, shift_in_dt.strftime("%H:%M:%S"), shift_out_dt.strftime("%H:%M:%S")))
-        if find_same_time_and_date.fetchone():
+        user_id = cursor.fetchone()[0]
+        find_same_time_and_date = cursor.execute('SELECT * FROM hours_entries_openclock WHERE user_id = (?) AND entry_date = (?) AND shift_in = (?) AND shift_out = (?)', (user_id, entry_date, shift_in_dt.strftime("%H:%M:%S"), shift_out_dt.strftime("%H:%M:%S")))
+        if find_same_time_and_date:
             print("Same time and date already exists")
             return
 
@@ -198,13 +187,13 @@ def parse_row_and_insert_from_openclock(conn, user_name, row):
             entry_date,
             shift_in_dt.strftime("%H:%M:%S"),
             shift_out_dt.strftime("%H:%M:%S"),
-            convert_decimal_to_hms(hours_worked),
-            row[-1].strip() if row[-1] else 'No notes'
+            hours_worked,
+            row[-1].strip()
         ))
 
-        conn.commit()
+        
         print("Inserted:", entry_date, shift_in_str, shift_out_str, hours_worked)
-
+    
     except Exception as e:
         print("Error inserting row:", e)
 
@@ -240,59 +229,12 @@ def query_hours_entries_openclock(conn, user_name, entry_date):
 if __name__ == "__main__":
     conn = database_setup()
     date_str = "2025-06-05"
-    date = datetime.strptime(date_str, "%Y-%m-%d")
-    print(type(date))
-    insert_gcal_data(conn, "srahman06", date)
+    # date = datetime.strptime(date_str, "%Y-%m-%d")
+    # print(type(date))
+    # insert_gcal_data(conn, "srahman06", date)
 
 
-# if __name__ == "__main__":
-#     username = "srahman06"
-
-#     db = database_setup()
-#     driver = setup.setup_driver()
-#     create_db()
-#     print("Driver setup complete")
-#     selected_period = setup.extract_time_from_self_service_and_select_period(driver)
-#     print("Selected period from self service:", selected_period)
-
-#     def extractTimePeriodSelfService(data: dict):
-#         insert_time_entries(db, username, data)
-#         print("Inserted time entries from organizeData.py:", data)
-#         return data
-
-#     def check_user_exists(db, username):
-#         cursor = db.cursor()
-#         cursor.execute('SELECT id FROM users WHERE username = ?', (username,))
-#         return cursor.fetchone() is not None
-    
-#     if not check_user_exists(db, username):
-#         insert_user(db, "Sohanur", username, "sohanur")
-
-#     extractTimePeriodSelfService(selected_period)
-    
-#     data = extract_time.select_range_dates(username, "05/27/2025", "05/31/2025")
-#     print(data)
-#     parse_row_and_insert_from_openclock(db, username, data[0])
-    # def convert_date_to_required_format(date):
-    #     date_obj = datetime.strptime(date, "%Y-%m-%d")
-
-    #     # Convert to required format
-    #     formatted_date = date_obj.strftime("%A\n%b %d, %Y")
-
-    #     return formatted_date
-    # conn = database_setup()
-    # data = query_hours_entries_openclock(conn, "srahman06", "2025-05-27")
-    
-    # print(convert_date_to_required_format(data[0][2]))
-
-
-
-
-
-
-
-
-
+    print(insert_gcal_data(conn, "srahman06", date_str))
 
 
 
