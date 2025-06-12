@@ -20,6 +20,7 @@ def convert_decimal_to_hms(decimal_hours):
 
 
 def database_setup():
+    create_db()
     conn = sqlite3.connect("app.db")
     return conn
 
@@ -51,17 +52,6 @@ def create_db():
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
         );
-        ''')
-
-    cursor.execute(''' 
-        CREATE TABLE IF NOT EXISTS time_entry_eachday_self_service_status (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            user_id INTEGER NOT NULL,
-            start_date DATE NOT NULL,
-            end_date DATE NOT NULL,
-            status TEXT NOT NULL DEFAULT 'No',
-            FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
-            );
         ''')
     
 
@@ -245,57 +235,6 @@ if __name__ == "__main__":
 
 
     print(insert_gcal_data(conn, "srahman06", date_str))
-
-
-
-# if __name__ == "__main__":
-#     username = "srahman06"
-
-#     db = database_setup()
-#     driver = setup.setup_driver()
-#     create_db()
-#     print("Driver setup complete")
-#     selected_period = setup.extract_time_from_self_service_and_select_period(driver)
-#     print("Selected period from self service:", selected_period)
-
-#     def extractTimePeriodSelfService(data: dict):
-#         insert_time_entries(db, username, data)
-#         print("Inserted time entries from organizeData.py:", data)
-#         return data
-
-#     def check_user_exists(db, username):
-#         cursor = db.cursor()
-#         cursor.execute('SELECT id FROM users WHERE username = ?', (username,))
-#         return cursor.fetchone() is not None
-    
-#     if not check_user_exists(db, username):
-#         insert_user(db, "Sohanur", username, "sohanur")
-
-#     extractTimePeriodSelfService(selected_period)
-    
-#     data = extract_time.select_range_dates(username, "05/27/2025", "05/31/2025")
-#     print(data)
-#     parse_row_and_insert_from_openclock(db, username, data[0])
-    # def convert_date_to_required_format(date):
-    #     date_obj = datetime.strptime(date, "%Y-%m-%d")
-
-    #     # Convert to required format
-    #     formatted_date = date_obj.strftime("%A\n%b %d, %Y")
-
-    #     return formatted_date
-    # conn = database_setup()
-    # data = query_hours_entries_openclock(conn, "srahman06", "2025-05-27")
-    
-    # print(convert_date_to_required_format(data[0][2]))
-
-
-
-
-
-
-
-
-
 
 
 
