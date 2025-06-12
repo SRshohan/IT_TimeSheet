@@ -117,6 +117,18 @@ def enter_all_hours(driver, shifts):
 
 
 
+def get_table_cells(driver):
+    wait = WebDriverWait(driver, 10)
+    table = wait.until(EC.presence_of_element_located((By.XPATH,
+        "/html/body/div[3]/table[1]/tbody/tr[5]/td"
+    )))
+    rows = table.find_elements(By.TAG_NAME, "tr")
+    if len(rows) < 2:
+        return None, None
+    header_cells = rows[0].find_elements(By.TAG_NAME, "td")
+    action_cells = rows[1].find_elements(By.TAG_NAME, "td")
+    return header_cells, action_cells
+
 def time_entries_each_day_to_time_sheet(driver):
     """
     Walks each date column, reads shifts from OpenClock DB,
@@ -126,25 +138,19 @@ def time_entries_each_day_to_time_sheet(driver):
     flag = False
     try:
         db_local = database_setup()
+
         while True:
-            # Wait for the main table to be present and get fresh references
-            wait = WebDriverWait(driver, 10)
-            table = wait.until(EC.presence_of_element_located((By.XPATH,
-                "/html/body/div[3]/table[1]/tbody/tr[5]/td"
-            )))
-            
-            # Get fresh references to rows and cells
-            rows = table.find_elements(By.TAG_NAME, "tr")
-            if len(rows) < 2:
+            header_cells, action_cells = get_table_cells(driver)
+            if not header_cells:
                 return [], False
 
-            header_cells = rows[0].find_elements(By.TAG_NAME, "td")
-            action_cells = rows[1].find_elements(By.TAG_NAME, "td")
-
-            for idx, cell in enumerate(header_cells):
+            idx = 0
+            while idx < len(header_cells):
+                cell = header_cells[idx]
                 shifts = []
                 raw, is_date = convert_to_date(cell.text.strip())
                 if not is_date:
+                    idx += 1
                     continue
 
                 date_list.append((raw, idx))
@@ -152,77 +158,82 @@ def time_entries_each_day_to_time_sheet(driver):
                 print("Choose an option: A) OpenClock, B) Google Calendar")
                 choice = input("Enter the letter of the option you want to select:  ").upper()
                 if choice == "A":
-                    # Query our DB
                     print("Query from Open Hours.... ")
                     entries = query_hours_entries_openclock(db_local, USERNAME, raw)
-                    res = [shifts.append((e[3], e[4])) for e in entries if e[5] != 0]
+                    print(entries)
+                    if not entries:
+                        continue
+                    if isinstance(entries, tuple):
+                        shifts.append((entries[3], entries[4]))
+                    else:
+                        for e in entries:
+                            shifts.append((e[3], e[4]))
 
-                    print("Open Hours Shifts: ", res)
                 elif choice == "B":
-                    print("Query from Google Calender....")
-                    print("Raw date: ", raw)
-                    
+                    print("Query from Google Calendar....")
                     entries = gcal_get_data(db_local, USERNAME, raw)
-                    print("Get data: ",  entries)
                     if not entries:
                         entries = insert_gcal_data(db_local, USERNAME, raw)
-                        print("Entries: ", entries)
                         if entries is None:
+                            idx += 1
                             continue
-                    
-                    if entries:
-                        if isinstance(entries, tuple):
-                            shifts.append((entries[3], entries[4]))
-                        else:
-                            for e in entries:
-                                shifts.append((e[3], e[4]))
-                    print("G Cal Shifts: ", shifts)
 
-                # Get fresh reference to action cell
+                    if isinstance(entries, tuple):
+                        shifts.append((entries[3], entries[4]))
+                    else:
+                        for e in entries:
+                            shifts.append((e[3], e[4]))
+
                 print("Action cell text:", action_cells[idx].text)
                 if shifts and action_cells[idx].text == "Enter Hours":
                     print("Entering for input hours...")
                     action_cells[idx].find_element(
                         By.PARTIAL_LINK_TEXT, "Enter Hours"
                     ).click()
-                    
-                    # Wait for the form to be present
+
+                    wait = WebDriverWait(driver, 10)
                     wait.until(EC.presence_of_element_located((By.XPATH,
                         "/html/body/div[3]/form/table[2]/tbody/tr[2]/td[2]/input"
                     )))
-                    
+
                     is_success = enter_all_hours(driver, shifts)
+
                     if is_success:
                         print("Hours entered successfully")
-                         # Wait for the main table to be present again
-                        print("Waiting for main table...")
-                        wait.until(EC.presence_of_element_located((By.XPATH,
-                            "/html/body/div[3]/table[1]/tbody/tr[5]/td"
-                        )))
+                        # Refresh cells after page change
+                        header_cells, action_cells = get_table_cells(driver)
+                        idx += 1
+                        continue
                     else:
                         print("Error entering hours")
+                        idx += 1
+                        continue
 
-            # Get fresh reference to navigation table
+                idx += 1
+
+            # Handle navigation: check for "Next" button
+            wait = WebDriverWait(driver, 10)
             nav_table = wait.until(EC.presence_of_element_located((
                 By.XPATH, 
                 "/html/body/div[3]/table[1]/tbody/tr[5]/td/form/table[2]/tbody"
             )))
             nav_buttons = nav_table.find_elements(By.TAG_NAME, "input")
-            
+
             if nav_buttons:
                 next_button = nav_buttons[-1]
                 if next_button.get_attribute("value") == "Next":
                     print("Found Next button, clicking...")
                     next_button.click()
-                    # Wait for the page to update
                     wait.until(EC.staleness_of(nav_table))
                     continue
-                elif flag == False and next_button.get_attribute("value") == "Previous":
+                elif not flag and next_button.get_attribute("value") == "Previous":
                     flag = True
                     continue
                 else:
                     print("No Next button found, we're on the last page")
                     break
+            else:
+                break
 
         return date_list, True
 
@@ -232,6 +243,7 @@ def time_entries_each_day_to_time_sheet(driver):
 
     finally:
         db_local.close()
+
 
 
 def parse_line(line):
