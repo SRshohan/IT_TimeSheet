@@ -1,13 +1,15 @@
 # IT Time Sheet Automation
 
-This application helps automate the process of submitting your IT time sheet by extracting data from OpenClock or Google Calendar and automatically filling it into the Self-Service portal.
+This application helps automate the process of submitting your IT time sheet by extracting data from Google Calendar and automatically filling it into the Self-Service portal.
+
+> **FYI Note**: Currently, the application shows both OpenClock and Google Calendar options in the Self-Service submission process, but only Google Calendar integration is functional. You will need to select option "B" (Google Calendar) for each date entry. This can be streamlined by modifying the input selection at the top of the script.
 
 ## Prerequisites
 
-- Python 3.8 or higher
+- Python 3.11
 - Chrome browser installed
 - ChromeDriver (compatible with your Chrome version)
-- Google Calendar API credentials (for Google Calendar integration)
+- Google Calendar API credentials
 
 ## Installation
 
@@ -20,11 +22,11 @@ cd IT_TimeSheet
 2. Create and activate a virtual environment (recommended):
 ```bash
 # On macOS/Linux
-python3 -m venv venv
+python3.11 -m venv venv
 source venv/bin/activate
 
 # On Windows
-python -m venv venv
+python3.11 -m venv venv
 .\venv\Scripts\activate
 ```
 
@@ -38,7 +40,7 @@ pip install -r requirements.txt
    - Download the version that matches your Chrome browser version
    - Extract the chromedriver executable to the `chromedriver-mac-arm64` directory in the project root
 
-5. Set up Google Calendar API (for Google Calendar integration):
+5. Set up Google Calendar API:
    - Go to the [Google Cloud Console](https://console.cloud.google.com/)
    - Create a new project or select an existing one
    - Enable the Google Calendar API
@@ -55,27 +57,36 @@ pip install -r requirements.txt
 
 ## Usage
 
-1. Start the application:
+1. Run the application:
 ```bash
 cd backend
-streamlit run app.py
+python setup.py
 ```
 
-2. The application will open in your default web browser
-3. Enter your credentials in the sidebar
-4. Select the date range for time sheet extraction
-5. Choose your data source (OpenClock or Google Calendar)
-6. Click "Extract Data" to fetch your time entries
-7. Click "Enter Time Sheet" to automatically fill the time sheet in Self-Service
+2. The application will:
+   - Open a Chrome browser window
+   - Navigate to the Self-Service portal
+   - Prompt you to select a time period
+   - For each date, you'll need to select option "B" (Google Calendar) to enter hours
+   - Automatically fill in your time entries from Google Calendar
+
+> **Note**: Make sure your `.env` file contains the necessary credentials:
+> - `USERNAME`: Your Self-Service portal username
+> - `PASSWORD`: Your Self-Service portal password
+> - `CALENDAR_ID`: Your Google Calendar ID
 
 ## Features
 
-- Automatic data extraction from OpenClock or Google Calendar
+- Automatic data extraction from Google Calendar
 - Automatic time sheet entry in Self-Service portal
 - Date range selection
 - Secure credential management
 - Real-time status updates
-- Multiple data source options
+
+> **Upcoming Features**:
+> - OpenClock integration (currently in development)
+> - Automatic selection of data source
+> - Batch processing of multiple dates
 
 ## Troubleshooting
 
@@ -86,8 +97,8 @@ streamlit run app.py
 
 2. If the application fails to connect:
    - Verify your internet connection
-   - Check if your credentials are correct
-   - Ensure you have access to both OpenClock and Self-Service portals
+   - Check if your credentials in `.env` are correct
+   - Ensure you have access to the Self-Service portal
 
 3. For Google Calendar integration issues:
    - Verify your `credentials.json` is properly set up
