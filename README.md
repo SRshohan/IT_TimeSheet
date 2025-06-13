@@ -105,7 +105,7 @@ python setup.py
    - Check if your `CALENDAR_ID` is correct in the `.env` file
    - Ensure you have granted necessary permissions to the application
 
-## Security Notes
+## Security
 
 - Never commit your `.env` file or share your credentials
 - The application stores credentials only in your local session
